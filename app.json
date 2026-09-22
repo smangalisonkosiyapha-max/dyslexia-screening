@@ -1,0 +1,81 @@
+{
+  "expo": {
+    "name": "CogniCare",
+    "slug": "cognicare",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#6C63FF"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.cognicare.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "CogniCare uses the camera for facial recognition check-ins and mood logging.",
+        "NSLocationWhenInUseUsageDescription": "CogniCare uses your location to suggest nearby support resources.",
+        "NSMicrophoneUsageDescription": "CogniCare uses the microphone for voice-based reminders.",
+        "NSMotionUsageDescription": "CogniCare uses motion sensors to detect activity patterns."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#6C63FF"
+      },
+      "package": "com.cognicare.app",
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.VIBRATE",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.ACTIVITY_RECOGNITION"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#6C63FF"
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow CogniCare to access your camera."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Allow CogniCare to access your location."
+        }
+      ],
+      "expo-secure-store",
+      "expo-font"
+    ],
+    "scheme": "cognicare",
+    "extra": {
+      "eas": {
+        "projectId": "db575178-e32c-405e-8578-cde50c18faae"
+      }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/db575178-e32c-405e-8578-cde50c18faae"
+    }
+  }
+}
