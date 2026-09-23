@@ -1,8 +1,19 @@
 // src/services/database.ts
 import * as SQLite from 'expo-sqlite';
-import { Task, MoodEntry, ExerciseSession, UserProfile,
-  DyslexiaTestType, TestItem, TestAttempt, ItemResponse, RemedialExercise,
-  RiskBand, CognitiveMarker, MarkerBreakdown } from '../constants/types';
+import {
+  Task,
+  MoodEntry,
+  ExerciseSession,
+  UserProfile,
+  DyslexiaTestType,
+  TestItem,
+  TestAttempt,
+  ItemResponse,
+  RemedialExercise,
+  RiskBand,
+  CognitiveMarker,
+  MarkerBreakdown,
+} from '../constants/types';
 import { TEST_ITEMS } from '../constants/dyslexiaTests';
 
 let db: SQLite.SQLiteDatabase;
@@ -121,9 +132,14 @@ export const initDatabase = async (): Promise<void> => {
   `);
 
   // Defensive migration for anyone who installed before the `synced` column
-  // existed — SQLite 3.35+ (bundled by expo-sqlite) supports IF NOT EXISTS here.
+  // existed. "ADD COLUMN IF NOT EXISTS" isn't supported by every SQLite
+  // build expo-sqlite ships, so check via PRAGMA first instead.
   try {
-    await db.execAsync(`ALTER TABLE test_attempts ADD COLUMN IF NOT EXISTS synced INTEGER DEFAULT 0;`);
+    const cols = await db.getAllAsync<{ name: string }>(`PRAGMA table_info(test_attempts);`);
+    const hasSynced = cols.some(c => c.name === 'synced');
+    if (!hasSynced) {
+      await db.execAsync(`ALTER TABLE test_attempts ADD COLUMN synced INTEGER DEFAULT 0;`);
+    }
   } catch (e) {
     console.warn('synced column migration skipped:', e);
   }
@@ -143,9 +159,15 @@ const seedTestItems = async (): Promise<void> => {
         (id, test_type, marker, stimulus, stimulus_display_ms, prompt, options, correct_answer, order_index)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
-        item.id, item.testType, item.marker,
-        item.stimulus ?? null, item.stimulusDisplayMs ?? null,
-        item.prompt, JSON.stringify(item.options), item.correctAnswer, item.orderIndex,
+        item.id,
+        item.testType,
+        item.marker,
+        item.stimulus ?? null,
+        item.stimulusDisplayMs ?? null,
+        item.prompt,
+        JSON.stringify(item.options),
+        item.correctAnswer,
+        item.orderIndex,
       ]
     );
   }
@@ -158,10 +180,15 @@ export const insertTestAttempt = async (attempt: TestAttempt): Promise<void> => 
     `INSERT INTO test_attempts (id, test_type, started_at, completed_at, raw_score, max_score, accuracy, risk_band, duration_seconds, synced)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
-      attempt.id, attempt.testType, attempt.startedAt.toISOString(),
+      attempt.id,
+      attempt.testType,
+      attempt.startedAt.toISOString(),
       attempt.completedAt?.toISOString() ?? null,
-      attempt.rawScore, attempt.maxScore, attempt.accuracy,
-      attempt.riskBand ?? null, attempt.durationSeconds,
+      attempt.rawScore,
+      attempt.maxScore,
+      attempt.accuracy,
+      attempt.riskBand ?? null,
+      attempt.durationSeconds,
       attempt.synced ? 1 : 0,
     ]
   );
@@ -179,10 +206,9 @@ export const getUnsyncedAttempts = async (): Promise<TestAttempt[]> => {
 };
 
 export const getResponsesForAttempt = async (attemptId: string): Promise<ItemResponse[]> => {
-  const rows = await db.getAllAsync<any>(
-    `SELECT * FROM item_responses WHERE attempt_id = ?`,
-    [attemptId]
-  );
+  const rows = await db.getAllAsync<any>(`SELECT * FROM item_responses WHERE attempt_id = ?`, [
+    attemptId,
+  ]);
   return rows.map(rowToItemResponse);
 };
 
@@ -191,13 +217,20 @@ export const insertItemResponse = async (response: ItemResponse): Promise<void> 
     `INSERT INTO item_responses (id, attempt_id, item_id, student_answer, is_correct, response_time_ms)
      VALUES (?, ?, ?, ?, ?, ?)`,
     [
-      response.id, response.attemptId, response.itemId,
-      response.studentAnswer, response.isCorrect ? 1 : 0, response.responseTimeMs,
+      response.id,
+      response.attemptId,
+      response.itemId,
+      response.studentAnswer,
+      response.isCorrect ? 1 : 0,
+      response.responseTimeMs,
     ]
   );
 };
 
-export const getAttemptsForTest = async (testType: DyslexiaTestType, limit = 20): Promise<TestAttempt[]> => {
+export const getAttemptsForTest = async (
+  testType: DyslexiaTestType,
+  limit = 20
+): Promise<TestAttempt[]> => {
   const rows = await db.getAllAsync<any>(
     `SELECT * FROM test_attempts WHERE test_type = ? ORDER BY started_at DESC LIMIT ?`,
     [testType, limit]
@@ -229,7 +262,11 @@ export const getMarkerBreakdown = async (attemptId: string): Promise<MarkerBreak
      GROUP BY ti.marker`,
     [attemptId]
   );
-  return rows.map(r => ({ marker: r.marker as CognitiveMarker, correct: r.correct, total: r.total }));
+  return rows.map(r => ({
+    marker: r.marker as CognitiveMarker,
+    correct: r.correct,
+    total: r.total,
+  }));
 };
 
 export const insertRemedialExercise = async (ex: RemedialExercise): Promise<void> => {
@@ -240,7 +277,9 @@ export const insertRemedialExercise = async (ex: RemedialExercise): Promise<void
   );
 };
 
-export const getRemedialExercisesForAttempt = async (attemptId: string): Promise<RemedialExercise[]> => {
+export const getRemedialExercisesForAttempt = async (
+  attemptId: string
+): Promise<RemedialExercise[]> => {
   const rows = await db.getAllAsync<any>(
     `SELECT * FROM remedial_exercises WHERE attempt_id = ? ORDER BY generated_at ASC`,
     [attemptId]
@@ -254,7 +293,9 @@ export const getRiskBandCounts = async (): Promise<Record<RiskBand, number>> => 
     `SELECT risk_band, COUNT(*) as n FROM test_attempts WHERE risk_band IS NOT NULL GROUP BY risk_band`
   );
   const counts: Record<RiskBand, number> = { low: 0, moderate: 0, high: 0 };
-  rows.forEach(r => { if (r.risk_band in counts) counts[r.risk_band as RiskBand] = r.n; });
+  rows.forEach(r => {
+    if (r.risk_band in counts) counts[r.risk_band as RiskBand] = r.n;
+  });
   return counts;
 };
 
@@ -281,21 +322,27 @@ export const insertTask = async (task: Task): Promise<void> => {
     `INSERT INTO tasks (id, title, description, scheduled_time, is_completed, is_recurring, recurring_days, category, priority, reminder_minutes, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
-      task.id, task.title, task.description ?? null,
-      task.scheduledTime.toISOString(), task.isCompleted ? 1 : 0,
+      task.id,
+      task.title,
+      task.description ?? null,
+      task.scheduledTime.toISOString(),
+      task.isCompleted ? 1 : 0,
       task.isRecurring ? 1 : 0,
       task.recurringDays ? JSON.stringify(task.recurringDays) : null,
-      task.category, task.priority, task.reminderMinutes,
+      task.category,
+      task.priority,
+      task.reminderMinutes,
       task.createdAt.toISOString(),
     ]
   );
 };
 
 export const updateTaskCompletion = async (id: string, completed: boolean): Promise<void> => {
-  await db.runAsync(
-    `UPDATE tasks SET is_completed = ?, completed_at = ? WHERE id = ?`,
-    [completed ? 1 : 0, completed ? new Date().toISOString() : null, id]
-  );
+  await db.runAsync(`UPDATE tasks SET is_completed = ?, completed_at = ? WHERE id = ?`, [
+    completed ? 1 : 0,
+    completed ? new Date().toISOString() : null,
+    id,
+  ]);
 };
 
 export const deleteTask = async (id: string): Promise<void> => {
@@ -317,7 +364,10 @@ export const insertMoodEntry = async (entry: MoodEntry): Promise<void> => {
   await db.runAsync(
     `INSERT INTO mood_entries (id, date, mood, energy, notes, factors) VALUES (?, ?, ?, ?, ?, ?)`,
     [
-      entry.id, entry.date.toISOString(), entry.mood, entry.energy,
+      entry.id,
+      entry.date.toISOString(),
+      entry.mood,
+      entry.energy,
       entry.notes ?? null,
       entry.factors ? JSON.stringify(entry.factors) : null,
     ]
@@ -340,9 +390,14 @@ export const insertExerciseSession = async (session: ExerciseSession): Promise<v
     `INSERT INTO exercise_sessions (id, exercise_id, started_at, completed_at, score, max_score, accuracy, duration_seconds)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     [
-      session.id, session.exerciseId, session.startedAt.toISOString(),
+      session.id,
+      session.exerciseId,
+      session.startedAt.toISOString(),
       session.completedAt?.toISOString() ?? null,
-      session.score, session.maxScore, session.accuracy, session.durationSeconds,
+      session.score,
+      session.maxScore,
+      session.accuracy,
+      session.durationSeconds,
     ]
   );
 };
@@ -353,8 +408,11 @@ export const getUser = async (): Promise<UserProfile | null> => {
   const row = await db.getFirstAsync<any>(`SELECT * FROM users LIMIT 1`);
   if (!row) return null;
   return {
-    id: row.id, name: row.name, age: row.age,
-    caregiverName: row.caregiver_name, caregiverContact: row.caregiver_contact,
+    id: row.id,
+    name: row.name,
+    age: row.age,
+    caregiverName: row.caregiver_name,
+    caregiverContact: row.caregiver_contact,
     diagnosisType: row.diagnosis_type,
     onboardingComplete: !!row.onboarding_complete,
     notificationsEnabled: !!row.notifications_enabled,
@@ -372,13 +430,18 @@ export const upsertUser = async (user: UserProfile): Promise<void> => {
       daily_goal_tasks, daily_goal_exercises)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
-      user.id, user.name, user.age ?? null,
-      user.caregiverName ?? null, user.caregiverContact ?? null,
+      user.id,
+      user.name,
+      user.age ?? null,
+      user.caregiverName ?? null,
+      user.caregiverContact ?? null,
       user.diagnosisType ?? null,
       user.onboardingComplete ? 1 : 0,
       user.notificationsEnabled ? 1 : 0,
       user.locationEnabled ? 1 : 0,
-      user.preferredLanguage, user.dailyGoalTasks, user.dailyGoalExercises,
+      user.preferredLanguage,
+      user.dailyGoalTasks,
+      user.dailyGoalExercises,
     ]
   );
 };
@@ -386,47 +449,67 @@ export const upsertUser = async (user: UserProfile): Promise<void> => {
 // ── Row mappers ───────────────────────────────────────────────────────────
 
 const rowToTask = (row: any): Task => ({
-  id: row.id, title: row.title, description: row.description,
+  id: row.id,
+  title: row.title,
+  description: row.description,
   scheduledTime: new Date(row.scheduled_time),
-  isCompleted: !!row.is_completed, isRecurring: !!row.is_recurring,
+  isCompleted: !!row.is_completed,
+  isRecurring: !!row.is_recurring,
   recurringDays: row.recurring_days ? JSON.parse(row.recurring_days) : undefined,
-  category: row.category, priority: row.priority,
+  category: row.category,
+  priority: row.priority,
   reminderMinutes: row.reminder_minutes,
   createdAt: new Date(row.created_at),
   completedAt: row.completed_at ? new Date(row.completed_at) : undefined,
 });
 
 const rowToMood = (row: any): MoodEntry => ({
-  id: row.id, date: new Date(row.date), mood: row.mood, energy: row.energy,
+  id: row.id,
+  date: new Date(row.date),
+  mood: row.mood,
+  energy: row.energy,
   notes: row.notes,
   factors: row.factors ? JSON.parse(row.factors) : undefined,
 });
 
 const rowToSession = (row: any): ExerciseSession => ({
-  id: row.id, exerciseId: row.exercise_id,
+  id: row.id,
+  exerciseId: row.exercise_id,
   startedAt: new Date(row.started_at),
   completedAt: row.completed_at ? new Date(row.completed_at) : undefined,
-  score: row.score, maxScore: row.max_score,
-  accuracy: row.accuracy, durationSeconds: row.duration_seconds,
+  score: row.score,
+  maxScore: row.max_score,
+  accuracy: row.accuracy,
+  durationSeconds: row.duration_seconds,
 });
 
 const rowToAttempt = (row: any): TestAttempt => ({
-  id: row.id, testType: row.test_type,
+  id: row.id,
+  testType: row.test_type,
   startedAt: new Date(row.started_at),
   completedAt: row.completed_at ? new Date(row.completed_at) : undefined,
-  rawScore: row.raw_score, maxScore: row.max_score, accuracy: row.accuracy,
+  rawScore: row.raw_score,
+  maxScore: row.max_score,
+  accuracy: row.accuracy,
   riskBand: row.risk_band ?? undefined,
   durationSeconds: row.duration_seconds,
   synced: !!row.synced,
 });
 
 const rowToItemResponse = (row: any): ItemResponse => ({
-  id: row.id, attemptId: row.attempt_id, itemId: row.item_id,
-  studentAnswer: row.student_answer, isCorrect: !!row.is_correct,
+  id: row.id,
+  attemptId: row.attempt_id,
+  itemId: row.item_id,
+  studentAnswer: row.student_answer,
+  isCorrect: !!row.is_correct,
   responseTimeMs: row.response_time_ms,
 });
 
 const rowToRemedialExercise = (row: any): RemedialExercise => ({
-  id: row.id, attemptId: row.attempt_id, marker: row.marker,
-  content: row.content, generatedAt: new Date(row.generated_at), source: row.source,
+  id: row.id,
+  attemptId: row.attempt_id,
+  marker: row.marker,
+  content: row.content,
+  generatedAt: new Date(row.generated_at),
+  source: row.source,
 });

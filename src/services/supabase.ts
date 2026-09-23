@@ -17,22 +17,31 @@ import { createClient } from '@supabase/supabase-js';
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL ?? '';
 const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
 
-if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+/** True once real credentials are configured — lets the app fail soft (local-only) otherwise. */
+export const isSupabaseConfigured = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
+
+if (!isSupabaseConfigured) {
   console.warn(
     'Supabase env vars are not set — the Screening sync and Admin dashboard will not work ' +
-    'until EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY are set in .env. ' +
-    'See supabase/README.md.'
+      'until EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY are set in .env. ' +
+      'See supabase/README.md.'
   );
 }
 
-export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-  auth: {
-    storage: AsyncStorage,
-    autoRefreshToken: true,
-    persistSession: true,
-    detectSessionInUrl: false,
-  },
-});
-
-/** True once real credentials are configured — lets the app fail soft (local-only) otherwise. */
-export const isSupabaseConfigured = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
+// createClient() validates its URL immediately and throws if given an empty
+// string — which would crash the whole app at import time before
+// isSupabaseConfigured is ever checked. Falling back to a harmless
+// placeholder here keeps the app running in local-only mode; every real
+// call site already checks isSupabaseConfigured before using this client.
+export const supabase = createClient(
+  SUPABASE_URL || 'https://placeholder.supabase.co',
+  SUPABASE_ANON_KEY || 'placeholder-anon-key',
+  {
+    auth: {
+      storage: AsyncStorage,
+      autoRefreshToken: true,
+      persistSession: true,
+      detectSessionInUrl: false,
+    },
+  }
+);
