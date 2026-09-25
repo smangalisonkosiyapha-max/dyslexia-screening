@@ -56,14 +56,14 @@
     "scheme": "cognicare",
     "extra": {
       "eas": {
-        "projectId": "db575178-e32c-405e-8578-cde50c18faae"
+        "projectId": "f5d9b0e0-8d5f-4d32-a732-b6fff348f217"
       }
     },
     "runtimeVersion": {
       "policy": "appVersion"
     },
     "updates": {
-      "url": "https://u.expo.dev/db575178-e32c-405e-8578-cde50c18faae"
+      "url": "https://u.expo.dev/f5d9b0e0-8d5f-4d32-a732-b6fff348f217"
     }
   }
 }
