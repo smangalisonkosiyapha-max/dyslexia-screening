@@ -1,22 +1,37 @@
 // src/screens/ProgressScreen.tsx
 import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect } from '@react-navigation/native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  ActivityIndicator,
+  TouchableOpacity,
+} from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Colors, Fonts, Spacing, Radii, Shadows } from '../constants/theme';
-import { MoodEntry, Task } from '../constants/types';
-import { getMoodEntries, getAllTasks } from '../services/database';
-import { MOOD_LABELS } from '../constants/exercises';
+import { TestAttempt, RiskBand } from '../constants/types';
+import { getAllAttempts, getRiskBandCounts } from '../services/database';
+import { DYSLEXIA_TESTS, RISK_BAND_INFO } from '../constants/dyslexiaTests';
 
-const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const RISK_COLOR: Record<string, string> = {
+  success: Colors.success,
+  warning: Colors.warning,
+  danger: Colors.danger,
+};
 
 const ProgressScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
-  const [moodEntries, setMoodEntries] = useState<MoodEntry[]>([]);
-  const [tasks, setTasks] = useState<Task[]>([]);
+  const navigation = useNavigation<any>();
+  const [attempts, setAttempts] = useState<TestAttempt[]>([]);
+  const [riskCounts, setRiskCounts] = useState<Record<RiskBand, number>>({
+    low: 0,
+    moderate: 0,
+    high: 0,
+  });
   const [loading, setLoading] = useState(true);
 
   useFocusEffect(
@@ -27,38 +42,21 @@ const ProgressScreen: React.FC = () => {
 
   const load = async () => {
     setLoading(true);
-    const [moods, allTasks] = await Promise.all([getMoodEntries(7), getAllTasks()]);
-    setMoodEntries(moods);
-    setTasks(allTasks);
+    const [allAttempts, counts] = await Promise.all([getAllAttempts(50), getRiskBandCounts()]);
+    setAttempts(allAttempts);
+    setRiskCounts(counts);
     setLoading(false);
   };
 
   // ── Derived stats ────────────────────────────────────────────────────────
-  const completedTasks = tasks.filter(t => t.isCompleted).length;
-  const completionRate = tasks.length > 0 ? Math.round((completedTasks / tasks.length) * 100) : 0;
+  const completedTestTypes = new Set(attempts.map(a => a.testType));
+  const testsCompleted = completedTestTypes.size;
+  const avgAccuracy =
+    attempts.length > 0
+      ? Math.round((attempts.reduce((s, a) => s + a.accuracy, 0) / attempts.length) * 100)
+      : 0;
 
-  const avgMood =
-    moodEntries.length > 0
-      ? (moodEntries.reduce((s, e) => s + e.mood, 0) / moodEntries.length).toFixed(1)
-      : '—';
-
-  const avgEnergy =
-    moodEntries.length > 0
-      ? (moodEntries.reduce((s, e) => s + e.energy, 0) / moodEntries.length).toFixed(1)
-      : '—';
-
-  // Last 7 days mood chart data
-  const last7Days = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date();
-    d.setDate(d.getDate() - (6 - i));
-    const entry = moodEntries.find(e => {
-      const ed = new Date(e.date);
-      return ed.toDateString() === d.toDateString();
-    });
-    return { day: DAYS[d.getDay()], mood: entry?.mood ?? null };
-  });
-
-  const maxBarHeight = 80;
+  const latestRiskBand: RiskBand | null = attempts.find(a => a.riskBand)?.riskBand ?? null;
 
   if (loading) {
     return (
@@ -79,57 +77,84 @@ const ProgressScreen: React.FC = () => {
         {/* Header */}
         <View style={styles.header}>
           <Text style={styles.title}>Progress</Text>
-          <Text style={styles.subtitle}>Your last 7 days</Text>
+          <Text style={styles.subtitle}>Your screening history</Text>
         </View>
 
         {/* Summary Cards */}
         <View style={styles.cardRow}>
           <View style={[styles.statCard, { backgroundColor: Colors.primary + '15' }]}>
             <Ionicons name="checkmark-circle" size={28} color={Colors.primary} />
-            <Text style={styles.statValue}>{completedTasks}</Text>
-            <Text style={styles.statLabel}>Tasks Done</Text>
+            <Text style={styles.statValue}>
+              {testsCompleted}/{DYSLEXIA_TESTS.length}
+            </Text>
+            <Text style={styles.statLabel}>Tests Done</Text>
           </View>
           <View style={[styles.statCard, { backgroundColor: Colors.success + '15' }]}>
             <Ionicons name="trending-up" size={28} color={Colors.success} />
-            <Text style={styles.statValue}>{completionRate}%</Text>
-            <Text style={styles.statLabel}>Completion</Text>
+            <Text style={styles.statValue}>{avgAccuracy}%</Text>
+            <Text style={styles.statLabel}>Avg Accuracy</Text>
           </View>
           <View style={[styles.statCard, { backgroundColor: Colors.warning + '15' }]}>
-            <Ionicons name="happy" size={28} color={Colors.warning} />
-            <Text style={styles.statValue}>{avgMood}</Text>
-            <Text style={styles.statLabel}>Avg Mood</Text>
+            <Ionicons name="flag" size={28} color={Colors.warning} />
+            <Text style={styles.statValue}>{attempts.length}</Text>
+            <Text style={styles.statLabel}>Attempts</Text>
           </View>
-          <View style={[styles.statCard, { backgroundColor: Colors.accent + '15' }]}>
-            <Ionicons name="flash" size={28} color={Colors.accent} />
-            <Text style={styles.statValue}>{avgEnergy}</Text>
-            <Text style={styles.statLabel}>Avg Energy</Text>
+          <View
+            style={[
+              styles.statCard,
+              {
+                backgroundColor: latestRiskBand
+                  ? RISK_COLOR[RISK_BAND_INFO[latestRiskBand].color] + '15'
+                  : Colors.border + '30',
+              },
+            ]}
+          >
+            <Ionicons
+              name="shield-checkmark"
+              size={28}
+              color={
+                latestRiskBand ? RISK_COLOR[RISK_BAND_INFO[latestRiskBand].color] : Colors.textMuted
+              }
+            />
+            <Text style={styles.statValue}>
+              {latestRiskBand ? RISK_BAND_INFO[latestRiskBand].label.replace(' risk', '') : '—'}
+            </Text>
+            <Text style={styles.statLabel}>Latest Risk</Text>
           </View>
         </View>
 
-        {/* Mood Chart */}
+        {/* Risk Band Breakdown */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Mood This Week</Text>
+          <Text style={styles.sectionTitle}>Risk Bands Across Attempts</Text>
           <View style={styles.chartCard}>
-            {moodEntries.length === 0 ? (
+            {attempts.length === 0 ? (
               <View style={styles.emptyChart}>
                 <Ionicons name="bar-chart-outline" size={40} color={Colors.textMuted} />
-                <Text style={styles.emptyText}>No mood entries yet</Text>
-                <Text style={styles.emptySubtext}>Log your mood from the Home screen</Text>
+                <Text style={styles.emptyText}>No screenings yet</Text>
+                <Text style={styles.emptySubtext}>Complete a test to see your results here</Text>
               </View>
             ) : (
-              <View style={styles.barChart}>
-                {last7Days.map(({ day, mood }, i) => {
-                  const barH = mood ? (mood / 5) * maxBarHeight : 4;
-                  const color = mood ? MOOD_LABELS[mood].color : Colors.border;
+              <View style={styles.riskBars}>
+                {(['low', 'moderate', 'high'] as RiskBand[]).map(band => {
+                  const info = RISK_BAND_INFO[band];
+                  const count = riskCounts[band];
+                  const max = Math.max(riskCounts.low, riskCounts.moderate, riskCounts.high, 1);
+                  const widthPct = (count / max) * 100;
                   return (
-                    <View key={i} style={styles.barCol}>
-                      <View style={styles.barWrapper}>
-                        {mood ? (
-                          <Text style={styles.barEmoji}>{MOOD_LABELS[mood].emoji}</Text>
-                        ) : null}
-                        <View style={[styles.bar, { height: barH, backgroundColor: color }]} />
+                    <View key={band} style={styles.riskBarRow}>
+                      <Text style={styles.riskBarLabel}>{info.label}</Text>
+                      <View style={styles.riskBarTrack}>
+                        <View
+                          style={[
+                            styles.riskBarFill,
+                            {
+                              width: `${widthPct}%` as any,
+                              backgroundColor: RISK_COLOR[info.color],
+                            },
+                          ]}
+                        />
                       </View>
-                      <Text style={styles.barDay}>{day}</Text>
+                      <Text style={styles.riskBarCount}>{count}</Text>
                     </View>
                   );
                 })}
@@ -138,73 +163,55 @@ const ProgressScreen: React.FC = () => {
           </View>
         </View>
 
-        {/* Recent Mood Entries */}
+        {/* Test History */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Recent Mood Logs</Text>
-          {moodEntries.length === 0 ? (
+          <Text style={styles.sectionTitle}>Test History</Text>
+          {attempts.length === 0 ? (
             <View style={styles.emptyList}>
-              <Text style={styles.emptyText}>No mood entries yet</Text>
+              <Text style={styles.emptyText}>No attempts recorded yet</Text>
             </View>
           ) : (
-            moodEntries.slice(0, 5).map(entry => {
-              const ml = MOOD_LABELS[entry.mood];
+            attempts.map(a => {
+              const meta = DYSLEXIA_TESTS.find(t => t.type === a.testType);
+              const risk = a.riskBand ? RISK_BAND_INFO[a.riskBand] : null;
               return (
-                <View key={entry.id} style={styles.moodRow}>
-                  <Text style={styles.moodEmoji}>{ml.emoji}</Text>
-                  <View style={styles.moodInfo}>
-                    <Text style={styles.moodLabel}>{ml.label}</Text>
-                    <Text style={styles.moodDate}>
-                      {new Date(entry.date).toLocaleDateString('en-ZA', {
+                <TouchableOpacity
+                  key={a.id}
+                  style={styles.historyRow}
+                  activeOpacity={0.8}
+                  onPress={() =>
+                    navigation.navigate('Screening', {
+                      screen: 'Results',
+                      params: { attemptId: a.id, testType: a.testType },
+                    })
+                  }
+                >
+                  <Text style={styles.historyIcon}>{meta?.icon}</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.historyTitle}>{meta?.title ?? a.testType}</Text>
+                    <Text style={styles.historyMeta}>
+                      {new Date(a.startedAt).toLocaleDateString('en-ZA', {
                         weekday: 'short',
                         day: 'numeric',
                         month: 'short',
                       })}
+                      {' · '}
+                      {Math.round(a.accuracy * 100)}% accuracy
                     </Text>
-                    {entry.notes ? (
-                      <Text style={styles.moodNotes} numberOfLines={1}>
-                        {entry.notes}
+                  </View>
+                  {risk && (
+                    <View
+                      style={[styles.riskBadge, { backgroundColor: RISK_COLOR[risk.color] + '20' }]}
+                    >
+                      <Text style={[styles.riskBadgeText, { color: RISK_COLOR[risk.color] }]}>
+                        {risk.label}
                       </Text>
-                    ) : null}
-                  </View>
-                  <View style={styles.energyBadge}>
-                    <Text style={styles.energyText}>⚡{entry.energy}</Text>
-                  </View>
-                </View>
+                    </View>
+                  )}
+                </TouchableOpacity>
               );
             })
           )}
-        </View>
-
-        {/* Task Breakdown */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Task Breakdown</Text>
-          <View style={styles.chartCard}>
-            <View style={styles.taskStats}>
-              <View style={styles.taskStatItem}>
-                <Text style={[styles.taskStatNum, { color: Colors.primary }]}>{tasks.length}</Text>
-                <Text style={styles.taskStatLabel}>Total</Text>
-              </View>
-              <View style={styles.taskDivider} />
-              <View style={styles.taskStatItem}>
-                <Text style={[styles.taskStatNum, { color: Colors.success }]}>
-                  {completedTasks}
-                </Text>
-                <Text style={styles.taskStatLabel}>Completed</Text>
-              </View>
-              <View style={styles.taskDivider} />
-              <View style={styles.taskStatItem}>
-                <Text style={[styles.taskStatNum, { color: Colors.warning }]}>
-                  {tasks.length - completedTasks}
-                </Text>
-                <Text style={styles.taskStatLabel}>Pending</Text>
-              </View>
-            </View>
-            {/* Progress bar */}
-            <View style={styles.progressBarBg}>
-              <View style={[styles.progressBarFill, { width: `${completionRate}%` as any }]} />
-            </View>
-            <Text style={styles.progressLabel}>{completionRate}% completion rate</Text>
-          </View>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -252,61 +259,47 @@ const styles = StyleSheet.create({
   emptyChart: { alignItems: 'center', paddingVertical: Spacing.xl },
   emptyText: { fontSize: Fonts.sizes.md, color: Colors.textMuted, marginTop: 8 },
   emptySubtext: { fontSize: Fonts.sizes.sm, color: Colors.textMuted, marginTop: 4 },
+  emptyList: { alignItems: 'center', paddingVertical: Spacing.lg },
 
-  barChart: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' },
-  barCol: { alignItems: 'center', flex: 1 },
-  barWrapper: { alignItems: 'center', justifyContent: 'flex-end', height: 100 },
-  barEmoji: { fontSize: 12, marginBottom: 2 },
-  bar: { width: 20, borderRadius: 4, minHeight: 4 },
-  barDay: { fontSize: 10, color: Colors.textMuted, marginTop: 4, fontWeight: '600' },
+  riskBars: { gap: Spacing.md },
+  riskBarRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  riskBarLabel: {
+    width: 90,
+    fontSize: Fonts.sizes.sm,
+    color: Colors.textSecondary,
+    fontWeight: '600',
+  },
+  riskBarTrack: {
+    flex: 1,
+    height: 12,
+    backgroundColor: Colors.border,
+    borderRadius: Radii.full,
+    overflow: 'hidden',
+  },
+  riskBarFill: { height: '100%', borderRadius: Radii.full },
+  riskBarCount: {
+    width: 24,
+    textAlign: 'right',
+    fontSize: Fonts.sizes.sm,
+    fontWeight: '700',
+    color: Colors.text,
+  },
 
-  moodRow: {
+  historyRow: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: Colors.surface,
     borderRadius: Radii.md,
     padding: Spacing.md,
     marginBottom: 8,
+    gap: 12,
     ...Shadows.sm,
   },
-  moodEmoji: { fontSize: 28, marginRight: 12 },
-  moodInfo: { flex: 1 },
-  moodLabel: { fontSize: Fonts.sizes.md, fontWeight: '700', color: Colors.text },
-  moodDate: { fontSize: Fonts.sizes.sm, color: Colors.textSecondary, marginTop: 2 },
-  moodNotes: { fontSize: Fonts.sizes.sm, color: Colors.textMuted, marginTop: 2 },
-  energyBadge: {
-    backgroundColor: Colors.warning + '20',
-    borderRadius: Radii.full,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-  },
-  energyText: { fontSize: Fonts.sizes.sm, fontWeight: '700', color: Colors.warning },
-
-  emptyList: { alignItems: 'center', paddingVertical: Spacing.lg },
-
-  taskStats: { flexDirection: 'row', justifyContent: 'space-around', marginBottom: Spacing.md },
-  taskStatItem: { alignItems: 'center' },
-  taskStatNum: { fontSize: Fonts.sizes.xxl, fontWeight: '800' },
-  taskStatLabel: { fontSize: Fonts.sizes.sm, color: Colors.textSecondary, marginTop: 2 },
-  taskDivider: { width: 1, backgroundColor: Colors.border },
-
-  progressBarBg: {
-    height: 10,
-    backgroundColor: Colors.border,
-    borderRadius: Radii.full,
-    overflow: 'hidden',
-    marginBottom: 6,
-  },
-  progressBarFill: {
-    height: '100%',
-    backgroundColor: Colors.primary,
-    borderRadius: Radii.full,
-  },
-  progressLabel: {
-    fontSize: Fonts.sizes.sm,
-    color: Colors.textSecondary,
-    textAlign: 'center',
-  },
+  historyIcon: { fontSize: 24 },
+  historyTitle: { fontSize: Fonts.sizes.md, fontWeight: '700', color: Colors.text },
+  historyMeta: { fontSize: Fonts.sizes.sm, color: Colors.textSecondary, marginTop: 2 },
+  riskBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: Radii.full },
+  riskBadgeText: { fontSize: Fonts.sizes.xs, fontWeight: '700' },
 });
 
 export default ProgressScreen;

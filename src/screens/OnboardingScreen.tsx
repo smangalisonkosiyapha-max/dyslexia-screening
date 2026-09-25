@@ -28,33 +28,33 @@ const SLIDES = [
   {
     id: '1',
     emoji: '🧠',
-    title: 'Welcome to CogniCare',
+    title: 'Welcome to CogniCare Dyslexia',
     subtitle:
-      'Your personal cognitive wellness companion. We help you stay organised, exercise your mind, and track your wellbeing every day.',
+      'A quick, private way to screen for common dyslexia indicators — reading, spelling, phonological awareness, and more.',
     color: Colors.primary,
   },
   {
     id: '2',
-    emoji: '📋',
-    title: 'Smart Task Reminders',
+    emoji: '📝',
+    title: 'Five Short Tests',
     subtitle:
-      'Never miss important tasks. Set reminders for medication, appointments, meals, and daily routines — with AI-personalised alerts.',
+      'Each test takes just a few minutes. Work through them at your own pace, whenever suits you — you can pick up where you left off.',
     color: Colors.secondary,
   },
   {
     id: '3',
-    emoji: '🏋️',
-    title: 'Daily Brain Exercises',
+    emoji: '📊',
+    title: 'Understand Your Results',
     subtitle:
-      'Strengthen memory, attention, and language skills through engaging interactive games designed for cognitive wellness.',
+      'After each test you get a clear risk band — low, moderate, or high — plus practical next steps if support is recommended.',
     color: Colors.accent,
   },
   {
     id: '4',
-    emoji: '📊',
-    title: 'Track Your Progress',
+    emoji: '🏛️',
+    title: 'Connect With Support',
     subtitle:
-      'Monitor mood, task completion, and cognitive performance with detailed charts and AI-generated insights.',
+      'See your progress over time, and find your institution\u2019s Disability Unit and nearby learning support resources when you need them.',
     color: Colors.warning,
   },
   {
@@ -194,7 +194,7 @@ const OnboardingScreen: React.FC<{ onComplete: () => void }> = ({ onComplete }) 
             />
             <View style={{ flex: 1, marginLeft: 12 }}>
               <Text style={styles.permLabel}>Location</Text>
-              <Text style={styles.permSub}>Find nearby support resources</Text>
+              <Text style={styles.permSub}>Find nearby Disability Unit & learning support</Text>
             </View>
             <Text
               style={[

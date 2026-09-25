@@ -125,10 +125,10 @@ const ProfileScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
 
   const resourceIcon = (type: NearbyResource['type']) =>
     ({
-      hospital: '🏥',
-      pharmacy: '💊',
-      clinic: '🩺',
-      support_center: '🧠',
+      disability_unit: '🏛️',
+      learning_centre: '📚',
+      educational_psychologist: '🧠',
+      tutoring_centre: '✏️',
     })[type];
 
   return (
@@ -216,7 +216,7 @@ const ProfileScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
           <SettingRow
             icon="location"
             label="Location Services"
-            subtitle="Find nearby support resources"
+            subtitle="Find nearby Disability Unit & learning support"
             value={location}
             onChange={toggleLocation}
           />
@@ -241,10 +241,11 @@ const ProfileScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
 
         {/* About */}
         <Card style={{ marginHorizontal: Spacing.lg }}>
-          <Text style={styles.cardTitle}>About CogniCare</Text>
+          <Text style={styles.cardTitle}>About CogniCare Dyslexia</Text>
           <Text style={styles.about}>
-            CogniCare helps people with cognitive disabilities stay organised, exercise their minds,
-            and track their wellbeing with the support of AI-powered personalised suggestions.
+            CogniCare Dyslexia offers short, evidence-informed screening tests for common dyslexia
+            indicators, tracks your results over time, and connects you with your institution's
+            Disability Unit and learning support resources.
           </Text>
           <Text style={[styles.about, { marginTop: 8, color: Colors.textMuted }]}>
             Version 1.0.0

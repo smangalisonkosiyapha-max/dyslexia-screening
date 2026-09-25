@@ -55,8 +55,8 @@ const AuthScreen: React.FC = () => {
       >
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
           <Text style={styles.logo}>🧠</Text>
-          <Text style={styles.title}>CogniCare</Text>
-          <Text style={styles.subtitle}>Dyslexia Screening & Support</Text>
+          <Text style={styles.title}>CogniCare Dyslexia</Text>
+          <Text style={styles.subtitle}>Screening & Support</Text>
 
           {!isSupabaseConfigured && (
             <View style={styles.warningBox}>

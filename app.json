@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "CogniCare",
+    "name": "CogniCare Dyslexia",
     "slug": "cognicare",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -16,10 +16,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.cognicare.app",
       "infoPlist": {
-        "NSCameraUsageDescription": "CogniCare uses the camera for facial recognition check-ins and mood logging.",
-        "NSLocationWhenInUseUsageDescription": "CogniCare uses your location to suggest nearby support resources.",
-        "NSMicrophoneUsageDescription": "CogniCare uses the microphone for voice-based reminders.",
-        "NSMotionUsageDescription": "CogniCare uses motion sensors to detect activity patterns."
+        "NSLocationWhenInUseUsageDescription": "CogniCare Dyslexia uses your location to suggest nearby Disability Unit and learning support resources."
       }
     },
     "android": {
@@ -29,14 +26,11 @@
       },
       "package": "com.cognicare.app",
       "permissions": [
-        "android.permission.CAMERA",
-        "android.permission.RECORD_AUDIO",
         "android.permission.ACCESS_FINE_LOCATION",
         "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.RECEIVE_BOOT_COMPLETED",
         "android.permission.VIBRATE",
-        "android.permission.POST_NOTIFICATIONS",
-        "android.permission.ACTIVITY_RECOGNITION"
+        "android.permission.POST_NOTIFICATIONS"
       ]
     },
     "web": {
@@ -51,15 +45,9 @@
         }
       ],
       [
-        "expo-camera",
-        {
-          "cameraPermission": "Allow CogniCare to access your camera."
-        }
-      ],
-      [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Allow CogniCare to access your location."
+          "locationWhenInUsePermission": "Allow CogniCare Dyslexia to access your location to find nearby support resources."
         }
       ],
       "expo-secure-store",

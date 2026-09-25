@@ -9,10 +9,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Colors } from '../constants/theme';
 import HomeScreen from '../screens/HomeScreen';
-import TasksScreen from '../screens/TasksScreen';
-import ExercisesScreen from '../screens/ExercisesScreen';
 import ProgressScreen from '../screens/ProgressScreen';
-import MoodLogScreen from '../screens/MoodLogScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import SelectTestScreen from '../screens/dyslexia/SelectTestScreen';
 import TestRunnerScreen from '../screens/dyslexia/TestRunnerScreen';
@@ -26,25 +23,7 @@ const Stack = createStackNavigator();
 const HomeStack = () => (
   <Stack.Navigator screenOptions={{ headerShown: false }}>
     <Stack.Screen name="HomeMain" component={HomeScreen} />
-    <Stack.Screen name="MoodLog" component={MoodLogScreen} options={{ presentation: 'modal' }} />
     <Stack.Screen name="Profile" component={ProfileScreen} />
-    <Stack.Screen name="AddTask" component={TasksScreen} />
-  </Stack.Navigator>
-);
-
-// ── Tasks Stack ───────────────────────────────────────────────────────────
-
-const TasksStack = () => (
-  <Stack.Navigator screenOptions={{ headerShown: false }}>
-    <Stack.Screen name="TasksMain" component={TasksScreen} />
-  </Stack.Navigator>
-);
-
-// ── Exercises Stack ───────────────────────────────────────────────────────
-
-const ExercisesStack = () => (
-  <Stack.Navigator screenOptions={{ headerShown: false }}>
-    <Stack.Screen name="ExercisesMain" component={ExercisesScreen} />
   </Stack.Navigator>
 );
 
@@ -61,7 +40,11 @@ const ProgressStack = () => (
 const ScreeningStack = () => (
   <Stack.Navigator screenOptions={{ headerShown: false }}>
     <Stack.Screen name="ScreeningMain" component={SelectTestScreen} />
-    <Stack.Screen name="TestRunner" component={TestRunnerScreen} options={{ presentation: 'modal' }} />
+    <Stack.Screen
+      name="TestRunner"
+      component={TestRunnerScreen}
+      options={{ presentation: 'modal' }}
+    />
     <Stack.Screen name="Results" component={ResultsScreen} />
   </Stack.Navigator>
 );
@@ -125,29 +108,15 @@ export const AppNavigator: React.FC = () => {
           }}
         />
         <Tab.Screen
-          name="Tasks"
-          component={TasksStack}
+          name="Screening"
+          component={ScreeningStack}
           options={{
             tabBarIcon: ({ focused, color }) => (
               <TabIcon
-                name={focused ? 'checkbox' : 'checkbox-outline'}
+                name={focused ? 'school' : 'school-outline'}
                 focused={focused}
                 color={color}
-                label="Tasks"
-              />
-            ),
-          }}
-        />
-        <Tab.Screen
-          name="Exercises"
-          component={ExercisesStack}
-          options={{
-            tabBarIcon: ({ focused, color }) => (
-              <TabIcon
-                name={focused ? 'fitness' : 'fitness-outline'}
-                focused={focused}
-                color={color}
-                label="Exercises"
+                label="Screening"
               />
             ),
           }}
@@ -162,20 +131,6 @@ export const AppNavigator: React.FC = () => {
                 focused={focused}
                 color={color}
                 label="Progress"
-              />
-            ),
-          }}
-        />
-        <Tab.Screen
-          name="Screening"
-          component={ScreeningStack}
-          options={{
-            tabBarIcon: ({ focused, color }) => (
-              <TabIcon
-                name={focused ? 'school' : 'school-outline'}
-                focused={focused}
-                color={color}
-                label="Screening"
               />
             ),
           }}

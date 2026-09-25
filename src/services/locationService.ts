@@ -3,7 +3,7 @@ import * as Location from 'expo-location';
 
 export interface NearbyResource {
   name: string;
-  type: 'hospital' | 'pharmacy' | 'clinic' | 'support_center';
+  type: 'disability_unit' | 'learning_centre' | 'educational_psychologist' | 'tutoring_centre';
   distance: string;
   address: string;
 }
@@ -35,18 +35,19 @@ export const getLocationAddress = async (): Promise<string | null> => {
   }
 };
 
-// Mock nearby support resources (in production, use Google Places API)
+// Mock nearby academic/dyslexia support resources (in production, use Google Places
+// API or a curated list of your institution's Disability Unit / partner centres).
 export const getNearbyResources = async (): Promise<NearbyResource[]> => {
   const location = await getCurrentLocation();
   if (!location) return getMockResources();
 
-  // In a real app, call Google Places API with location.coords
+  // In a real app, call Google Places API (or a campus directory) with location.coords
   return getMockResources();
 };
 
 const getMockResources = (): NearbyResource[] => [
-  { name: 'City Medical Centre', type: 'clinic', distance: '0.8 km', address: '12 Main Rd' },
-  { name: 'LifeLine Pharmacy', type: 'pharmacy', distance: '1.2 km', address: '45 Oak Ave' },
-  { name: 'Cognitive Support Centre', type: 'support_center', distance: '2.1 km', address: '8 Palm St' },
-  { name: 'Regional Hospital', type: 'hospital', distance: '3.4 km', address: '1 Hospital Dr' },
+  { name: 'Campus Disability Unit', type: 'disability_unit', distance: '0.5 km', address: 'Student Services Building' },
+  { name: 'Academic Learning Support Centre', type: 'learning_centre', distance: '0.9 km', address: '3 Library Rd' },
+  { name: 'Educational Psychology Practice', type: 'educational_psychologist', distance: '2.3 km', address: '17 Oak Ave' },
+  { name: 'Peer Tutoring Centre', type: 'tutoring_centre', distance: '1.1 km', address: 'Student Union, Floor 2' },
 ];
