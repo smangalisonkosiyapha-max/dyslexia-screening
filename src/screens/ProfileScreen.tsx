@@ -16,25 +16,28 @@ import * as Location from 'expo-location';
 import * as Haptics from 'expo-haptics';
 
 import { Colors, Fonts, Spacing, Radii, Shadows } from '../constants/theme';
-import { SCROLL_BOTTOM_PADDING } from '../constants/layout';
+import { useScrollBottomPadding } from '../constants/layout';
 import { UserProfile } from '../constants/types';
 import { Button, Card } from '../components/UIComponents';
 import { getUser, upsertUser } from '../services/database';
 import { isSupabaseConfigured } from '../services/supabase';
-import { signOut } from '../services/authService';
+import { signOut, getCurrentUserId } from '../services/authService';
 import { registerForPushNotificationsAsync, scheduleDailyCheckIn } from '../services/notifications';
+import { syncProfile } from '../services/syncService';
 import {
   requestLocationPermission,
   getLocationAddress,
   getNearbyResources,
+  openDirections,
 } from '../services/locationService';
 import { NearbyResource } from '../services/locationService';
 
 const ProfileScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
+  const bottomPadding = useScrollBottomPadding();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [name, setName] = useState('');
-  const [caregiverName, setCaregiverName] = useState('');
-  const [caregiverContact, setCaregiverContact] = useState('');
+  const [emergencyContactName, setEmergencyContactName] = useState('');
+  const [emergencyContactPhone, setEmergencyContactPhone] = useState('');
   const [notifs, setNotifs] = useState(true);
   const [location, setLocation] = useState(false);
   const [locationAddr, setLocationAddr] = useState('');
@@ -51,8 +54,8 @@ const ProfileScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     if (user) {
       setProfile(user);
       setName(user.name);
-      setCaregiverName(user.caregiverName ?? '');
-      setCaregiverContact(user.caregiverContact ?? '');
+      setEmergencyContactName(user.emergencyContactName ?? '');
+      setEmergencyContactPhone(user.emergencyContactPhone ?? '');
       setNotifs(user.notificationsEnabled);
       setLocation(user.locationEnabled);
       if (user.locationEnabled) loadLocation();
@@ -104,11 +107,16 @@ const ProfileScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
       return;
     }
     setSaving(true);
+    // profile.id is already the real Supabase user ID once loaded via the
+    // fixed getUser() — this fallback only matters in the unlikely case
+    // profile is still null, and uses the real auth ID rather than a
+    // disconnected random one (see getUser() for why that matters).
+    const id = profile?.id ?? (await getCurrentUserId()) ?? `user_${Date.now()}`;
     const updated: UserProfile = {
-      id: profile?.id ?? `user_${Date.now()}`,
+      id,
       name: name.trim(),
-      caregiverName: caregiverName.trim() || undefined,
-      caregiverContact: caregiverContact.trim() || undefined,
+      emergencyContactName: emergencyContactName.trim() || undefined,
+      emergencyContactPhone: emergencyContactPhone.trim() || undefined,
       onboardingComplete: true,
       notificationsEnabled: notifs,
       locationEnabled: location,
@@ -116,11 +124,18 @@ const ProfileScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
       dailyGoalTasks: 5,
       dailyGoalExercises: 3,
     };
-    await upsertUser(updated);
-    setProfile(updated);
-    setEditing(false);
-    setSaving(false);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    try {
+      await upsertUser(updated);
+      syncProfile(updated); // fire-and-forget — never blocks the local save
+      setProfile(updated);
+      setEditing(false);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (e) {
+      console.error('ProfileScreen save failed:', e);
+      Alert.alert('Could not save', 'Something went wrong saving your profile. Please try again.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const resourceIcon = (type: NearbyResource['type']) =>
@@ -135,7 +150,7 @@ const ProfileScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     <SafeAreaView style={styles.container} edges={['top']}>
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: SCROLL_BOTTOM_PADDING }}
+        contentContainerStyle={{ paddingBottom: bottomPadding }}
       >
         <View style={styles.header}>
           <TouchableOpacity onPress={() => navigation.goBack()}>
@@ -172,21 +187,21 @@ const ProfileScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                 />
               </View>
               <View style={styles.field}>
-                <Text style={styles.fieldLabel}>Caregiver Name</Text>
+                <Text style={styles.fieldLabel}>Emergency Contact Name</Text>
                 <TextInput
                   style={styles.input}
-                  value={caregiverName}
-                  onChangeText={setCaregiverName}
+                  value={emergencyContactName}
+                  onChangeText={setEmergencyContactName}
                   placeholder="Optional"
                   placeholderTextColor={Colors.textMuted}
                 />
               </View>
               <View style={styles.field}>
-                <Text style={styles.fieldLabel}>Caregiver Contact</Text>
+                <Text style={styles.fieldLabel}>Emergency Contact Phone</Text>
                 <TextInput
                   style={styles.input}
-                  value={caregiverContact}
-                  onChangeText={setCaregiverContact}
+                  value={emergencyContactPhone}
+                  onChangeText={setEmergencyContactPhone}
                   placeholder="Phone or email"
                   placeholderTextColor={Colors.textMuted}
                   keyboardType="phone-pad"
@@ -197,8 +212,8 @@ const ProfileScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
           ) : (
             <>
               <InfoRow label="Name" value={name || '—'} />
-              <InfoRow label="Caregiver" value={caregiverName || 'Not set'} />
-              <InfoRow label="Contact" value={caregiverContact || 'Not set'} />
+              <InfoRow label="Emergency Contact" value={emergencyContactName || 'Not set'} />
+              <InfoRow label="Contact Phone" value={emergencyContactPhone || 'Not set'} />
             </>
           )}
         </Card>
@@ -209,7 +224,7 @@ const ProfileScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
           <SettingRow
             icon="notifications"
             label="Push Notifications"
-            subtitle="Task reminders and AI alerts"
+            subtitle="Screening reminders and result alerts"
             value={notifs}
             onChange={toggleNotifications}
           />
@@ -227,14 +242,25 @@ const ProfileScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
           <Card style={{ marginHorizontal: Spacing.lg }}>
             <Text style={styles.cardTitle}>Nearby Support</Text>
             {resources.map((r, i) => (
-              <View key={i} style={styles.resourceRow}>
+              <TouchableOpacity
+                key={i}
+                style={styles.resourceRow}
+                activeOpacity={0.7}
+                onPress={() => openDirections(r)}
+              >
                 <Text style={styles.resourceIcon}>{resourceIcon(r.type)}</Text>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.resourceName}>{r.name}</Text>
                   <Text style={styles.resourceAddr}>{r.address}</Text>
                 </View>
-                <Text style={styles.resourceDist}>{r.distance}</Text>
-              </View>
+                <View style={{ alignItems: 'flex-end' }}>
+                  <Text style={styles.resourceDist}>{r.distance}</Text>
+                  <View style={styles.directionsRow}>
+                    <Ionicons name="navigate" size={12} color={Colors.primary} />
+                    <Text style={styles.directionsText}>Directions</Text>
+                  </View>
+                </View>
+              </TouchableOpacity>
             ))}
           </Card>
         )}
@@ -378,6 +404,8 @@ const styles = StyleSheet.create({
   resourceName: { fontSize: Fonts.sizes.sm, fontWeight: '600', color: Colors.text },
   resourceAddr: { fontSize: Fonts.sizes.xs, color: Colors.textSecondary },
   resourceDist: { fontSize: Fonts.sizes.xs, color: Colors.primary, fontWeight: '600' },
+  directionsRow: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 3 },
+  directionsText: { fontSize: 10, color: Colors.primary, fontWeight: '700' },
   about: { fontSize: Fonts.sizes.sm, color: Colors.textSecondary, lineHeight: 22 },
 });
 

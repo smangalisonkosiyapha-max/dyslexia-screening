@@ -8,7 +8,10 @@
 
 import { supabase, isSupabaseConfigured } from './supabase';
 import {
-  getUnsyncedAttempts, getResponsesForAttempt, getRemedialExercisesForAttempt, markAttemptSynced,
+  getUnsyncedAttempts,
+  getResponsesForAttempt,
+  getRemedialExercisesForAttempt,
+  markAttemptSynced,
 } from './database';
 import { ItemResponse, RemedialExercise, TestAttempt } from '../constants/types';
 import { getCurrentUserId } from './authService';
@@ -49,17 +52,24 @@ const remedialToRow = (r: RemedialExercise) => ({
  * Call this right after the local insert in TestRunnerScreen. Never throws —
  * a failed push just leaves the attempt unsynced for the next retry.
  */
-export const syncAttempt = async (attempt: TestAttempt, responses: ItemResponse[]): Promise<boolean> => {
+export const syncAttempt = async (
+  attempt: TestAttempt,
+  responses: ItemResponse[]
+): Promise<boolean> => {
   if (!isSupabaseConfigured) return false;
   const studentId = await getCurrentUserId();
   if (!studentId) return false;
 
   try {
-    const { error: attemptError } = await supabase.from('test_attempts').insert(attemptToRow(attempt, studentId));
+    const { error: attemptError } = await supabase
+      .from('test_attempts')
+      .insert(attemptToRow(attempt, studentId));
     if (attemptError) throw attemptError;
 
     if (responses.length > 0) {
-      const { error: responsesError } = await supabase.from('item_responses').insert(responses.map(responseToRow));
+      const { error: responsesError } = await supabase
+        .from('item_responses')
+        .insert(responses.map(responseToRow));
       if (responsesError) throw responsesError;
     }
 
@@ -78,6 +88,54 @@ export const syncRemedialExercise = async (exercise: RemedialExercise): Promise<
     await supabase.from('remedial_exercises').insert(remedialToRow(exercise));
   } catch (e) {
     console.warn('syncRemedialExercise failed (non-fatal):', e);
+  }
+};
+
+/**
+ * Pushes the student's name and emergency contact info to Supabase so
+ * Disability Unit staff can see it on the admin side. Call after any local
+ * profile save (ProfileScreen, OnboardingScreen). Never throws — a failed
+ * push just means the admin view is stale until the next successful sync.
+ */
+export const syncProfile = async (profile: {
+  name: string;
+  emergencyContactName?: string;
+  emergencyContactPhone?: string;
+}): Promise<void> => {
+  if (!isSupabaseConfigured) {
+    console.warn('syncProfile skipped: Supabase not configured');
+    return;
+  }
+  const studentId = await getCurrentUserId();
+  if (!studentId) {
+    console.warn('syncProfile skipped: no signed-in user (getCurrentUserId returned null)');
+    return;
+  }
+
+  console.log('syncProfile: pushing to Supabase for', studentId, profile);
+
+  try {
+    const { error, data } = await supabase
+      .from('profiles')
+      .update({
+        name: profile.name,
+        emergency_contact_name: profile.emergencyContactName ?? null,
+        emergency_contact_phone: profile.emergencyContactPhone ?? null,
+      })
+      .eq('id', studentId)
+      .select();
+
+    if (error) {
+      console.warn('syncProfile failed:', error.message, error);
+    } else if (!data || data.length === 0) {
+      console.warn(
+        'syncProfile: update matched 0 rows — RLS likely blocked it, or profile row does not exist for this id'
+      );
+    } else {
+      console.log('syncProfile: success', data);
+    }
+  } catch (e) {
+    console.warn('syncProfile threw (non-fatal):', e);
   }
 };
 

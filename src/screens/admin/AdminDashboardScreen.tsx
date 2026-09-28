@@ -10,7 +10,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 
 import { Colors, Fonts, Spacing, Radii, Shadows } from '../../constants/theme';
-import { SCROLL_BOTTOM_PADDING } from '../../constants/layout';
+import { useScrollBottomPadding } from '../../constants/layout';
 import { StudentSummary, RiskBand } from '../../constants/types';
 import { RISK_BAND_INFO } from '../../constants/dyslexiaTests';
 import { StatCard, Badge, EmptyState } from '../../components/UIComponents';
@@ -24,6 +24,7 @@ const RISK_COLORS: Record<RiskBand, { color: string; bg: string }> = {
 };
 
 const AdminDashboardScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
+  const bottomPadding = useScrollBottomPadding();
   const [counts, setCounts] = useState<Record<RiskBand, number>>({ low: 0, moderate: 0, high: 0 });
   const [students, setStudents] = useState<StudentSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -60,7 +61,7 @@ const AdminDashboardScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
 
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: SCROLL_BOTTOM_PADDING, paddingHorizontal: Spacing.lg }}
+        contentContainerStyle={{ paddingBottom: bottomPadding, paddingHorizontal: Spacing.lg }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />}
       >
         <View style={styles.statsRow}>

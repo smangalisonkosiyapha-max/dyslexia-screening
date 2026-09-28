@@ -90,8 +90,8 @@ export interface UserProfile {
   id: string;
   name: string;
   age?: number;
-  caregiverName?: string;
-  caregiverContact?: string;
+  emergencyContactName?: string;
+  emergencyContactPhone?: string;
   diagnosisType?: string;
   onboardingComplete: boolean;
   notificationsEnabled: boolean;

@@ -9,7 +9,7 @@ import { View, Text, ScrollView, StyleSheet, ActivityIndicator } from 'react-nat
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Colors, Fonts, Spacing, Radii, Shadows } from '../../constants/theme';
-import { SCROLL_BOTTOM_PADDING } from '../../constants/layout';
+import { useScrollBottomPadding } from '../../constants/layout';
 import { RISK_BAND_INFO, DYSLEXIA_TESTS } from '../../constants/dyslexiaTests';
 import { MarkerBreakdown, RemedialExercise, TestAttempt } from '../../constants/types';
 import { Card, Button, ProgressBar, Badge } from '../../components/UIComponents';
@@ -34,6 +34,7 @@ const MARKER_LABELS: Record<string, string> = {
 };
 
 const ResultsScreen: React.FC<{ route: any; navigation: any }> = ({ route, navigation }) => {
+  const bottomPadding = useScrollBottomPadding();
   const { attemptId, testType } = route.params;
   const meta = DYSLEXIA_TESTS.find(t => t.type === testType)!;
 
@@ -95,7 +96,7 @@ const ResultsScreen: React.FC<{ route: any; navigation: any }> = ({ route, navig
     <SafeAreaView style={styles.container} edges={['top']}>
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: SCROLL_BOTTOM_PADDING, paddingHorizontal: Spacing.lg }}
+        contentContainerStyle={{ paddingBottom: bottomPadding, paddingHorizontal: Spacing.lg }}
       >
         <Text style={styles.title}>{meta.title}</Text>
         <Text style={styles.subtitle}>Here's how it went</Text>

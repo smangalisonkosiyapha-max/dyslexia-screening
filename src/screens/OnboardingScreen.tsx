@@ -1,5 +1,5 @@
 // src/screens/OnboardingScreen.tsx
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   Dimensions,
   FlatList,
   Animated,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -20,6 +21,8 @@ import { Button } from '../components/UIComponents';
 import { upsertUser } from '../services/database';
 import { registerForPushNotificationsAsync, scheduleDailyCheckIn } from '../services/notifications';
 import { requestLocationPermission } from '../services/locationService';
+import { syncProfile } from '../services/syncService';
+import { getCurrentUserId, getMyProfile } from '../services/authService';
 import { UserProfile } from '../constants/types';
 
 const { width } = Dimensions.get('window');
@@ -74,10 +77,20 @@ const OnboardingScreen: React.FC<{ onComplete: () => void }> = ({ onComplete }) 
 
   // Form state
   const [name, setName] = useState('');
-  const [caregiverName, setCaregiverName] = useState('');
+  const [emergencyContactName, setEmergencyContactName] = useState('');
   const [notifGranted, setNotifGranted] = useState(false);
   const [locationGranted, setLocationGranted] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  // The student already typed their name when signing up — pre-fill it
+  // instead of making them enter it a second time.
+  useEffect(() => {
+    getMyProfile()
+      .then(p => {
+        if (p?.name && p.name !== 'Student') setName(prev => prev || p.name);
+      })
+      .catch(() => {});
+  }, []);
 
   const goNext = () => {
     if (currentIndex < SLIDES.length - 1) {
@@ -112,10 +125,15 @@ const OnboardingScreen: React.FC<{ onComplete: () => void }> = ({ onComplete }) 
   const finish = async () => {
     if (!name.trim()) return;
     setSaving(true);
+    // Use the real signed-in Supabase user ID as the local row's key — not a
+    // random local ID — so getUser() can correctly scope to "whoever is
+    // signed in right now" instead of showing the wrong student's profile
+    // on a shared device.
+    const userId = (await getCurrentUserId()) ?? `user_${Date.now()}`;
     const user: UserProfile = {
-      id: `user_${Date.now()}`,
+      id: userId,
       name: name.trim(),
-      caregiverName: caregiverName.trim() || undefined,
+      emergencyContactName: emergencyContactName.trim() || undefined,
       onboardingComplete: true,
       notificationsEnabled: notifGranted,
       locationEnabled: locationGranted,
@@ -123,10 +141,17 @@ const OnboardingScreen: React.FC<{ onComplete: () => void }> = ({ onComplete }) 
       dailyGoalTasks: 5,
       dailyGoalExercises: 3,
     };
-    await upsertUser(user);
-    setSaving(false);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    onComplete();
+    try {
+      await upsertUser(user);
+      syncProfile(user); // fire-and-forget — never blocks the local save
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      onComplete();
+    } catch (e) {
+      console.error('Onboarding finish failed:', e);
+      Alert.alert('Could not save', 'Something went wrong setting up your profile. Please try again.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const renderSlide = ({ item }: { item: (typeof SLIDES)[0] }) => (
@@ -151,13 +176,13 @@ const OnboardingScreen: React.FC<{ onComplete: () => void }> = ({ onComplete }) 
             />
           </View>
           <View style={styles.field}>
-            <Text style={styles.fieldLabel}>Caregiver / Support Person (optional)</Text>
+            <Text style={styles.fieldLabel}>Emergency Contact / Support Person (optional)</Text>
             <TextInput
               style={styles.input}
               placeholder="e.g. Mom, Dr. Smith"
               placeholderTextColor={Colors.textMuted}
-              value={caregiverName}
-              onChangeText={setCaregiverName}
+              value={emergencyContactName}
+              onChangeText={setEmergencyContactName}
             />
           </View>
 

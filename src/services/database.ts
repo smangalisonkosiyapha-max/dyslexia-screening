@@ -15,11 +15,34 @@ import {
   MarkerBreakdown,
 } from '../constants/types';
 import { TEST_ITEMS } from '../constants/dyslexiaTests';
+import { getCurrentUserId } from './authService';
+import { isSupabaseConfigured } from './supabase';
 
 let db: SQLite.SQLiteDatabase;
 
+/**
+ * Races any promise against a timeout, so a stuck/hung database call fails
+ * loudly after a few seconds instead of leaving a UI spinner stuck forever.
+ * This is a safety net, not a fix for the underlying cause — if this ever
+ * fires, check the console for what actually hung.
+ */
+const withTimeout = <T,>(promise: Promise<T>, ms = 8000, label = 'operation'): Promise<T> =>
+  Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
+    ),
+  ]);
+
 export const initDatabase = async (): Promise<void> => {
-  db = await SQLite.openDatabaseAsync('cognicare.db');
+  // Using a new filename here (not 'cognicare.db') is deliberate: some
+  // devices ended up with a corrupted/locked local database after an
+  // earlier schema change, which caused writes to hang indefinitely rather
+  // than error out. A fresh filename guarantees every device starts from
+  // a clean SQLite file, sidestepping that entirely. Any local-only data in
+  // the old file (already-synced test attempts, profile info) is not
+  // migrated, but Supabase remains the source of truth for synced data.
+  db = await SQLite.openDatabaseAsync('cognicare_v2.db');
 
   await db.execAsync(`
     PRAGMA journal_mode = WAL;
@@ -28,8 +51,8 @@ export const initDatabase = async (): Promise<void> => {
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       age INTEGER,
-      caregiver_name TEXT,
-      caregiver_contact TEXT,
+      emergency_contact_name TEXT,
+      emergency_contact_phone TEXT,
       diagnosis_type TEXT,
       onboarding_complete INTEGER DEFAULT 0,
       notifications_enabled INTEGER DEFAULT 1,
@@ -142,6 +165,32 @@ export const initDatabase = async (): Promise<void> => {
     }
   } catch (e) {
     console.warn('synced column migration skipped:', e);
+  }
+
+  // Defensive migration for anyone who installed before caregiver_name/
+  // caregiver_contact were renamed to emergency_contact_name/
+  // emergency_contact_phone. Without this, an existing on-device database
+  // still has the old column names (CREATE TABLE IF NOT EXISTS never
+  // updates an existing table), so every upsertUser() call throws
+  // "no such column: emergency_contact_name" and silently hangs any
+  // screen that doesn't catch it.
+  try {
+    const userCols = await db.getAllAsync<{ name: string }>(`PRAGMA table_info(users);`);
+    const names = userCols.map(c => c.name);
+
+    if (names.includes('caregiver_name') && !names.includes('emergency_contact_name')) {
+      await db.execAsync(`ALTER TABLE users RENAME COLUMN caregiver_name TO emergency_contact_name;`);
+    } else if (!names.includes('emergency_contact_name')) {
+      await db.execAsync(`ALTER TABLE users ADD COLUMN emergency_contact_name TEXT;`);
+    }
+
+    if (names.includes('caregiver_contact') && !names.includes('emergency_contact_phone')) {
+      await db.execAsync(`ALTER TABLE users RENAME COLUMN caregiver_contact TO emergency_contact_phone;`);
+    } else if (!names.includes('emergency_contact_phone')) {
+      await db.execAsync(`ALTER TABLE users ADD COLUMN emergency_contact_phone TEXT;`);
+    }
+  } catch (e) {
+    console.warn('emergency_contact column migration skipped:', e);
   }
 
   await seedTestItems();
@@ -405,14 +454,25 @@ export const insertExerciseSession = async (session: ExerciseSession): Promise<v
 // ── User ──────────────────────────────────────────────────────────────────
 
 export const getUser = async (): Promise<UserProfile | null> => {
-  const row = await db.getFirstAsync<any>(`SELECT * FROM users LIMIT 1`);
+  // Scoped to the currently signed-in Supabase user — without this, on a
+  // shared device the app would show whichever profile happened to be
+  // saved locally first, regardless of who's actually logged in.
+  let row: any;
+  if (isSupabaseConfigured) {
+    const userId = await getCurrentUserId();
+    if (!userId) return null;
+    row = await db.getFirstAsync<any>(`SELECT * FROM users WHERE id = ?`, [userId]);
+  } else {
+    // Local-only mode (no backend configured) has no accounts — one profile.
+    row = await db.getFirstAsync<any>(`SELECT * FROM users LIMIT 1`);
+  }
   if (!row) return null;
   return {
     id: row.id,
     name: row.name,
     age: row.age,
-    caregiverName: row.caregiver_name,
-    caregiverContact: row.caregiver_contact,
+    emergencyContactName: row.emergency_contact_name,
+    emergencyContactPhone: row.emergency_contact_phone,
     diagnosisType: row.diagnosis_type,
     onboardingComplete: !!row.onboarding_complete,
     notificationsEnabled: !!row.notifications_enabled,
@@ -424,25 +484,29 @@ export const getUser = async (): Promise<UserProfile | null> => {
 };
 
 export const upsertUser = async (user: UserProfile): Promise<void> => {
-  await db.runAsync(
-    `INSERT OR REPLACE INTO users (id, name, age, caregiver_name, caregiver_contact, diagnosis_type,
-      onboarding_complete, notifications_enabled, location_enabled, preferred_language,
-      daily_goal_tasks, daily_goal_exercises)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      user.id,
-      user.name,
-      user.age ?? null,
-      user.caregiverName ?? null,
-      user.caregiverContact ?? null,
-      user.diagnosisType ?? null,
-      user.onboardingComplete ? 1 : 0,
-      user.notificationsEnabled ? 1 : 0,
-      user.locationEnabled ? 1 : 0,
-      user.preferredLanguage,
-      user.dailyGoalTasks,
-      user.dailyGoalExercises,
-    ]
+  await withTimeout(
+    db.runAsync(
+      `INSERT OR REPLACE INTO users (id, name, age, emergency_contact_name, emergency_contact_phone, diagnosis_type,
+        onboarding_complete, notifications_enabled, location_enabled, preferred_language,
+        daily_goal_tasks, daily_goal_exercises)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        user.id,
+        user.name,
+        user.age ?? null,
+        user.emergencyContactName ?? null,
+        user.emergencyContactPhone ?? null,
+        user.diagnosisType ?? null,
+        user.onboardingComplete ? 1 : 0,
+        user.notificationsEnabled ? 1 : 0,
+        user.locationEnabled ? 1 : 0,
+        user.preferredLanguage,
+        user.dailyGoalTasks,
+        user.dailyGoalExercises,
+      ]
+    ),
+    8000,
+    'upsertUser'
   );
 };
 

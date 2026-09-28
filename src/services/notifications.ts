@@ -3,9 +3,9 @@ import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import Constants from 'expo-constants';
 import { Platform, Alert } from 'react-native';
-import { Task } from '../constants/types';
+import { getTipOfTheDay } from '../constants/dyslexiaTests';
 
-// ── SDK 53: shouldShowAlert/shouldPlaySound/shouldSetBadge are deprecated.
+// ── SDK 53+: shouldShowAlert/shouldPlaySound/shouldSetBadge are deprecated.
 // The correct properties are now shouldShowBanner and shouldShowList.
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -22,8 +22,8 @@ Notifications.setNotificationHandler({
 const setupAndroidChannels = async (): Promise<void> => {
   if (Platform.OS !== 'android') return;
 
-  await Notifications.setNotificationChannelAsync('task-reminders', {
-    name: 'Task Reminders',
+  await Notifications.setNotificationChannelAsync('screening-reminders', {
+    name: 'Screening Reminders',
     importance: Notifications.AndroidImportance.HIGH,
     vibrationPattern: [0, 250, 250, 250],
     lightColor: '#6C63FF',
@@ -31,17 +31,8 @@ const setupAndroidChannels = async (): Promise<void> => {
     enableVibrate: true,
   });
 
-  await Notifications.setNotificationChannelAsync('missed-tasks', {
-    name: 'Missed Task Alerts',
-    importance: Notifications.AndroidImportance.MAX,
-    vibrationPattern: [0, 500, 250, 500],
-    lightColor: '#FF5252',
-    sound: 'default',
-    enableVibrate: true,
-  });
-
   await Notifications.setNotificationChannelAsync('ai-insights', {
-    name: 'AI Insights',
+    name: 'Insights & Alerts',
     importance: Notifications.AndroidImportance.DEFAULT,
     lightColor: '#43D9B0',
   });
@@ -67,8 +58,8 @@ export const registerForPushNotificationsAsync = async (): Promise<string | null
       Alert.alert(
         'Notifications Disabled',
         Platform.OS === 'ios'
-          ? 'Go to Settings → CogniCare → Notifications and turn them on.'
-          : 'Go to Settings → Apps → CogniCare → Notifications and enable them.',
+          ? 'Go to Settings → CogniCare Dyslexia → Notifications and turn them on.'
+          : 'Go to Settings → Apps → CogniCare Dyslexia → Notifications and enable them.',
         [{ text: 'OK' }]
       );
       return null;
@@ -83,7 +74,8 @@ export const registerForPushNotificationsAsync = async (): Promise<string | null
           return tokenData.data;
         }
       } catch (tokenError) {
-        console.warn('Remote push token unavailable:', tokenError);
+        // Expected in Expo Go on SDK 53+ — remote push requires a dev build there.
+        console.warn('Remote push token unavailable (expected in Expo Go):', tokenError);
       }
     }
 
@@ -94,109 +86,13 @@ export const registerForPushNotificationsAsync = async (): Promise<string | null
   }
 };
 
-// ── Schedule task reminder ────────────────────────────────────────────────
-export const scheduleTaskReminder = async (task: Task): Promise<string | null> => {
-  try {
-    const triggerTime = new Date(task.scheduledTime.getTime() - task.reminderMinutes * 60 * 1000);
-    if (triggerTime <= new Date()) return null;
-
-    const id = await Notifications.scheduleNotificationAsync({
-      content: {
-        title: `⏰ Reminder: ${task.title}`,
-        body:
-          task.description ??
-          `Due at ${task.scheduledTime.toLocaleTimeString([], {
-            hour: '2-digit',
-            minute: '2-digit',
-          })}`,
-        data: { taskId: task.id, type: 'task-reminder' },
-        sound: 'default',
-      },
-      trigger: {
-        date: triggerTime,
-        ...(Platform.OS === 'android' ? { channelId: 'task-reminders' } : {}),
-      } as any,
-    });
-
-    return id;
-  } catch (err) {
-    console.warn('scheduleTaskReminder error:', err);
-    return null;
-  }
-};
-
-// ── Task due alert (fires exactly at scheduled time) ──────────────────────
-export const scheduleTaskDueAlert = async (task: Task): Promise<string | null> => {
-  try {
-    const dueTime = new Date(task.scheduledTime);
-    if (dueTime <= new Date()) return null;
-
-    const id = await Notifications.scheduleNotificationAsync({
-      content: {
-        title: `🔔 Time for: ${task.title}`,
-        body: task.description ?? `Your task is due now. Tap to mark it complete.`,
-        data: { taskId: task.id, type: 'task-due' },
-        sound: 'default',
-      },
-      trigger: {
-        date: dueTime,
-        ...(Platform.OS === 'android' ? { channelId: 'task-reminders' } : {}),
-      } as any,
-    });
-
-    return id;
-  } catch (err) {
-    console.warn('scheduleTaskDueAlert error:', err);
-    return null;
-  }
-};
-
-// ── Missed task alert ─────────────────────────────────────────────────────
-// Only schedules if the alert time is in the future AND the task hasn't
-// already been completed. Pass a getIsCompleted callback so we can check
-// at fire time rather than at schedule time.
-export const scheduleMissedTaskAlert = async (task: Task): Promise<string | null> => {
-  try {
-    // Don't schedule if the task time itself is already in the past
-    if (task.scheduledTime <= new Date()) return null;
-
-    const alertTime = new Date(task.scheduledTime.getTime() + 15 * 60 * 1000);
-    if (alertTime <= new Date()) return null;
-
-    const id = await Notifications.scheduleNotificationAsync({
-      content: {
-        title: `⚠️ Missed: ${task.title}`,
-        body: 'You may have missed this task. Tap to reschedule.',
-        data: { taskId: task.id, type: 'missed-task' },
-        sound: 'default',
-      },
-      trigger: {
-        date: alertTime,
-        ...(Platform.OS === 'android' ? { channelId: 'missed-tasks' } : {}),
-      } as any,
-    });
-    return id;
-  } catch (err) {
-    console.warn('scheduleMissedTaskAlert error:', err);
-    return null;
-  }
-};
-
-// ── AI insight notification ───────────────────────────────────────────────
-export const scheduleAIInsightNotification = async (
+// ── AI insight / result alert notification ─────────────────────────────────
+export const scheduleInsightNotification = async (
   title: string,
   body: string,
   delaySeconds = 0
 ): Promise<void> => {
   try {
-    const trigger =
-      delaySeconds > 0
-        ? ({
-            seconds: delaySeconds,
-            ...(Platform.OS === 'android' ? { channelId: 'ai-insights' } : {}),
-          } as any)
-        : null;
-
     await Notifications.scheduleNotificationAsync({
       content: {
         title: `🧠 ${title}`,
@@ -204,45 +100,56 @@ export const scheduleAIInsightNotification = async (
         data: { type: 'ai-insight' },
         sound: 'default',
       },
-      trigger,
+      trigger:
+        delaySeconds > 0
+          ? ({
+              type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+              seconds: delaySeconds,
+              ...(Platform.OS === 'android' ? { channelId: 'ai-insights' } : {}),
+            } as any)
+          : null,
     });
   } catch (err) {
-    console.warn('scheduleAIInsightNotification error:', err);
+    console.warn('scheduleInsightNotification error:', err);
   }
 };
 
-// ── Daily check-ins ───────────────────────────────────────────────────────
-export const scheduleDailyCheckIn = async (): Promise<void> => {
+// ── Daily screening check-in ────────────────────────────────────────────────
+// A single daily reminder, not a morning/evening pair — one nudge to
+// finish remaining screening tests or check the latest result.
+//
+// IMPORTANT: a repeating daily trigger on expo-notifications SDK 53+ must
+// use { type: SchedulableTriggerInputTypes.DAILY, hour, minute } — the old
+// bare { hour, minute, repeats: true } shape (no `type`) is not a valid
+// schedulable trigger on current SDKs and can fire at the wrong time
+// (e.g. immediately, regardless of hour/minute) instead of respecting the
+// scheduled time. This was the cause of a "good morning" notification
+// showing up in the evening.
+export const scheduleDailyCheckIn = async (hour = 9, minute = 0): Promise<void> => {
   try {
     await Notifications.cancelAllScheduledNotificationsAsync();
 
+    // NOTE: this is a repeating trigger, so the tip text is fixed at the
+    // moment it's scheduled — it won't silently rotate day to day on its
+    // own. It refreshes whenever this function re-runs (e.g. toggling the
+    // setting off/on, or re-registering on app start). For a tip that's
+    // reliably fresh every single day regardless of notification settings,
+    // see the "Tip of the day" card on the Home screen instead, which
+    // re-picks getTipOfTheDay() on every visit.
+    const tip = getTipOfTheDay();
+
     await Notifications.scheduleNotificationAsync({
       content: {
-        title: '🌅 Good morning! Ready for today?',
-        body: "Check your tasks and log how you're feeling.",
+        title: '📚 Screening check-in',
+        body: `Got a few minutes? Continue your dyslexia screening, or try today's tip: ${tip}`,
         data: { type: 'daily-checkin' },
         sound: 'default',
       },
       trigger: {
-        hour: 8,
-        minute: 0,
-        repeats: true,
-        ...(Platform.OS === 'android' ? { channelId: 'task-reminders' } : {}),
-      } as any,
-    });
-
-    await Notifications.scheduleNotificationAsync({
-      content: {
-        title: '🌙 Evening check-in',
-        body: 'How did today go? Log your mood and review completed tasks.',
-        data: { type: 'evening-checkin' },
-        sound: 'default',
-      },
-      trigger: {
-        hour: 20,
-        minute: 0,
-        repeats: true,
-        ...(Platform.OS === 'android' ? { channelId: 'ai-insights' } : {}),
+        type: Notifications.SchedulableTriggerInputTypes.DAILY,
+        hour,
+        minute,
+        ...(Platform.OS === 'android' ? { channelId: 'screening-reminders' } : {}),
       } as any,
     });
   } catch (err) {

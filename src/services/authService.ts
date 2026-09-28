@@ -1,4 +1,5 @@
 // src/services/authService.ts
+import * as Linking from 'expo-linking';
 import { supabase } from './supabase';
 import { AppRole, AuthProfile } from '../constants/types';
 
@@ -18,6 +19,29 @@ export const signIn = async (email: string, password: string): Promise<void> => 
 
 export const signOut = async (): Promise<void> => {
   await supabase.auth.signOut();
+};
+
+/**
+ * Sends a password-reset email. The link in the email redirects back INTO
+ * the app via a deep link (cognicare://reset-password in a built app, or an
+ * exp:// URL in Expo Go), where App.tsx picks up the recovery tokens and
+ * shows ResetPasswordScreen.
+ *
+ * The redirect URL must be allow-listed in Supabase: Authentication → URL
+ * Configuration → Redirect URLs (add `cognicare://**` and `exp://**`).
+ * Otherwise Supabase ignores it and falls back to the Site URL
+ * (localhost:3000 by default), which is what causes "site can't be reached".
+ */
+export const resetPassword = async (email: string): Promise<void> => {
+  const redirectTo = Linking.createURL('reset-password');
+  const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
+  if (error) throw error;
+};
+
+/** Sets a new password for the currently signed-in (recovery) session. */
+export const updatePassword = async (newPassword: string): Promise<void> => {
+  const { error } = await supabase.auth.updateUser({ password: newPassword });
+  if (error) throw error;
 };
 
 export const getCurrentUserId = async (): Promise<string | null> => {

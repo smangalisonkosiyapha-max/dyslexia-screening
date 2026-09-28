@@ -72,3 +72,30 @@ export const getAttemptsForStudent = async (studentId: string): Promise<AdminAtt
     riskBand: r.risk_band,
   }));
 };
+
+export interface StudentContact {
+  id: string;
+  name: string;
+  email: string | null;
+  emergencyContactName: string | null;
+  emergencyContactPhone: string | null;
+}
+
+/** A student's contact info, for the "reach the student" section of Student Detail. */
+export const getStudentContact = async (studentId: string): Promise<StudentContact | null> => {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id, name, email, emergency_contact_name, emergency_contact_phone')
+    .eq('id', studentId)
+    .single();
+
+  if (error) console.warn('getStudentContact failed:', error.message);
+  if (error || !data) return null;
+  return {
+    id: data.id,
+    name: data.name,
+    email: data.email,
+    emergencyContactName: data.emergency_contact_name,
+    emergencyContactPhone: data.emergency_contact_phone,
+  };
+};

@@ -1,6 +1,7 @@
 // App.tsx
 import React, { useState, useEffect, useRef } from 'react';
-import { View, ActivityIndicator, StyleSheet, AppState, AppStateStatus } from 'react-native';
+import { View, ActivityIndicator, StyleSheet, AppState, AppStateStatus, Alert } from 'react-native';
+import * as Linking from 'expo-linking';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as Notifications from 'expo-notifications';
@@ -10,8 +11,9 @@ import { AppNavigator } from './src/navigation/AppNavigator';
 import { AdminNavigator } from './src/navigation/AdminNavigator';
 import OnboardingScreen from './src/screens/OnboardingScreen';
 import AuthScreen from './src/screens/auth/AuthScreen';
+import ResetPasswordScreen from './src/screens/auth/ResetPasswordScreen';
 import { initDatabase, getUser } from './src/services/database';
-import { isSupabaseConfigured } from './src/services/supabase';
+import { isSupabaseConfigured, supabase } from './src/services/supabase';
 import { getMyProfile, onAuthStateChange } from './src/services/authService';
 import { syncPendingAttempts } from './src/services/syncService';
 import { AppRole } from './src/constants/types';
@@ -22,9 +24,13 @@ export default function App() {
   const [signedIn, setSignedIn] = useState(false);
   const [role, setRole] = useState<AppRole | null>(null);
   const [checkingProfile, setCheckingProfile] = useState(false);
+  const [recovering, setRecovering] = useState(false);
   const appState = useRef(AppState.currentState);
+  // Shared so the auth listener can wait for the local DB before reading it.
+  const dbReady = useRef<Promise<void> | null>(null);
 
   useEffect(() => {
+    dbReady.current = initDatabase();
     bootstrap();
 
     const sub = Notifications.addNotificationResponseReceivedListener(response => {
@@ -39,15 +45,60 @@ export default function App() {
           setSignedIn(!!userId);
           if (userId) {
             setCheckingProfile(true);
-            const profile = await getMyProfile();
-            setRole(profile?.role ?? 'student');
-            setCheckingProfile(false);
+            try {
+              const [profile] = await Promise.all([getMyProfile(), dbReady.current]);
+              setRole(profile?.role ?? 'student');
+              // Re-check onboarding for THIS account every time the signed-in
+              // user changes. Checking only once at app start meant a new
+              // account inherited the previous account's "onboarded" flag,
+              // skipped onboarding, and landed on an empty profile.
+              const user = await getUser();
+              setOnboarded(!!user?.onboardingComplete);
+            } catch (e) {
+              console.error('Auth profile check failed', e);
+            } finally {
+              setCheckingProfile(false);
+            }
             syncPendingAttempts();
           } else {
             setRole(null);
+            setOnboarded(false);
           }
         })
       : undefined;
+
+    // Password-reset deep link: the emailed link opens the app with recovery
+    // tokens in the URL fragment. Exchange them for a session and show the
+    // "set a new password" screen.
+    const handleUrl = async (url: string | null) => {
+      if (!url || !url.includes('#')) return;
+      const params = new URLSearchParams(url.split('#')[1]);
+
+      if (params.get('error_description')) {
+        Alert.alert(
+          'Reset link problem',
+          'This reset link is invalid or has expired. Please request a new one from the login screen.'
+        );
+        return;
+      }
+      if (params.get('type') !== 'recovery') return;
+
+      const accessToken = params.get('access_token');
+      const refreshToken = params.get('refresh_token');
+      if (!accessToken || !refreshToken) return;
+
+      setRecovering(true);
+      const { error } = await supabase.auth.setSession({
+        access_token: accessToken,
+        refresh_token: refreshToken,
+      });
+      if (error) {
+        setRecovering(false);
+        Alert.alert('Reset link problem', 'Could not verify this reset link. Please request a new one.');
+      }
+    };
+    Linking.getInitialURL().then(handleUrl).catch(() => {});
+    const linkSub = Linking.addEventListener('url', ({ url }) => handleUrl(url));
 
     const appStateSub = AppState.addEventListener('change', (next: AppStateStatus) => {
       if (appState.current.match(/inactive|background/) && next === 'active') {
@@ -59,15 +110,21 @@ export default function App() {
     return () => {
       sub.remove();
       unsubscribeAuth?.();
+      linkSub.remove();
       appStateSub.remove();
     };
   }, []);
 
   const bootstrap = async () => {
     try {
-      await initDatabase();
-      const user = await getUser();
-      setOnboarded(!!user?.onboardingComplete);
+      await dbReady.current;
+      // With a backend configured, onboarding is decided per signed-in user
+      // in the auth listener above. Local-only mode has no accounts, so
+      // check the single local profile here.
+      if (!isSupabaseConfigured) {
+        const user = await getUser();
+        setOnboarded(!!user?.onboardingComplete);
+      }
     } catch (e) {
       console.error('Bootstrap error', e);
     } finally {
@@ -75,11 +132,19 @@ export default function App() {
     }
   };
 
-  if (!ready || checkingProfile) {
+  if (!ready || (checkingProfile && !recovering)) {
     return (
       <View style={styles.splash}>
         <ActivityIndicator size="large" color={Colors.primary} />
       </View>
+    );
+  }
+
+  if (recovering) {
+    return (
+      <SafeAreaProvider>
+        <ResetPasswordScreen onDone={() => setRecovering(false)} />
+      </SafeAreaProvider>
     );
   }
 

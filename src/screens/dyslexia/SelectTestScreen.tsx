@@ -9,7 +9,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 
 import { Colors, Fonts, Spacing, Radii, Shadows } from '../../constants/theme';
-import { SCROLL_BOTTOM_PADDING } from '../../constants/layout';
+import { useScrollBottomPadding } from '../../constants/layout';
 import { DYSLEXIA_TESTS, RISK_BAND_INFO } from '../../constants/dyslexiaTests';
 import { DyslexiaTestType, TestAttempt } from '../../constants/types';
 import { Card, Badge, StatCard } from '../../components/UIComponents';
@@ -29,6 +29,7 @@ const RISK_BADGE_COLORS = {
 } as const;
 
 const SelectTestScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
+  const bottomPadding = useScrollBottomPadding();
   const [attempts, setAttempts] = useState<TestAttempt[]>([]);
 
   useFocusEffect(
@@ -47,7 +48,7 @@ const SelectTestScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     <SafeAreaView style={styles.container} edges={['top']}>
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: SCROLL_BOTTOM_PADDING }}
+        contentContainerStyle={{ paddingBottom: bottomPadding }}
       >
         <View style={styles.header}>
           <Text style={styles.title}>Dyslexia Screening</Text>

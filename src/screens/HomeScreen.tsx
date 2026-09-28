@@ -1,16 +1,18 @@
 // src/screens/HomeScreen.tsx
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 
 import { Colors, Fonts, Spacing, Radii, Shadows } from '../constants/theme';
-import { SCROLL_BOTTOM_PADDING } from '../constants/layout';
+import { useScrollBottomPadding } from '../constants/layout';
 import { TestAttempt } from '../constants/types';
 import { Card, Button, SectionHeader, EmptyState } from '../components/UIComponents';
 import { getUser, getAllAttempts } from '../services/database';
-import { DYSLEXIA_TESTS, RISK_BAND_INFO } from '../constants/dyslexiaTests';
+import { getMyNotes, markNoteRead, StudentNote } from '../services/notesService';
+import { generateScreeningEncouragement } from '../services/aiService';
+import { DYSLEXIA_TESTS, RISK_BAND_INFO, getTipOfTheDay } from '../constants/dyslexiaTests';
 
 const RISK_COLOR: Record<string, string> = {
   success: Colors.success,
@@ -19,16 +21,39 @@ const RISK_COLOR: Record<string, string> = {
 };
 
 const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
+  const bottomPadding = useScrollBottomPadding();
   const [userName, setUserName] = useState('Friend');
   const [attempts, setAttempts] = useState<TestAttempt[]>([]);
+  const [unreadNote, setUnreadNote] = useState<StudentNote | null>(null);
+  const [aiMessage, setAiMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const aiRequested = useRef(false);
 
   const loadData = useCallback(async () => {
     try {
-      const [user, allAttempts] = await Promise.all([getUser(), getAllAttempts(10)]);
+      const [user, allAttempts, notes] = await Promise.all([
+        getUser(),
+        getAllAttempts(10),
+        getMyNotes(),
+      ]);
       if (user) setUserName(user.name.split(' ')[0]);
       setAttempts(allAttempts);
+      setUnreadNote(notes.find(n => !n.readAt) ?? null);
+
+      // AI message generated once per app session (not on every pull-to-refresh),
+      // based on this student's actual screening progress.
+      if (!aiRequested.current) {
+        aiRequested.current = true;
+        const remaining = DYSLEXIA_TESTS.filter(
+          t => !allAttempts.some(a => a.testType === t.type)
+        ).length;
+        generateScreeningEncouragement({
+          userName: user?.name?.split(' ')[0] ?? 'there',
+          recentAttempts: allAttempts,
+          remainingTestCount: remaining,
+        }).then(setAiMessage);
+      }
     } catch (e) {
       console.error('HomeScreen loadData error', e);
     } finally {
@@ -68,6 +93,12 @@ const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
 
   const goToScreening = () => navigation.navigate('Screening');
 
+  const dismissNote = async () => {
+    if (!unreadNote) return;
+    await markNoteRead(unreadNote.id);
+    setUnreadNote(null);
+  };
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <ScrollView
@@ -79,7 +110,7 @@ const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
             tintColor={Colors.primary}
           />
         }
-        contentContainerStyle={{ paddingBottom: SCROLL_BOTTOM_PADDING }}
+        contentContainerStyle={{ paddingBottom: bottomPadding }}
       >
         {/* Header */}
         <View style={styles.header}>
@@ -93,6 +124,28 @@ const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
             </View>
           </TouchableOpacity>
         </View>
+
+        {/* AI-generated encouragement, based on actual screening progress */}
+        {aiMessage && (
+          <View style={styles.aiCard}>
+            <Ionicons name="sparkles" size={18} color={Colors.primary} />
+            <Text style={styles.aiCardText}>{aiMessage}</Text>
+          </View>
+        )}
+
+        {/* Message from Disability Unit staff */}
+        {unreadNote && (
+          <View style={styles.noteBanner}>
+            <Ionicons name="chatbubble-ellipses" size={22} color={Colors.primary} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.noteBannerTitle}>Message from student support</Text>
+              <Text style={styles.noteBannerText}>{unreadNote.message}</Text>
+            </View>
+            <TouchableOpacity onPress={dismissNote} hitSlop={10}>
+              <Ionicons name="close" size={20} color={Colors.textMuted} />
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* Start Screening CTA */}
         <Card style={styles.ctaCard}>
@@ -128,6 +181,15 @@ const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
             <LatestResultRow attempt={latestAttempt} />
           </Card>
         )}
+
+        {/* Tip of the day */}
+        <View style={styles.tipCard}>
+          <Text style={styles.tipEmoji}>💡</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.tipLabel}>Tip of the day</Text>
+            <Text style={styles.tipText}>{getTipOfTheDay()}</Text>
+          </View>
+        </View>
 
         {/* Recent Screenings */}
         <SectionHeader
@@ -243,6 +305,46 @@ const styles = StyleSheet.create({
   ctaRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, marginBottom: Spacing.md },
   ctaTitle: { fontSize: Fonts.sizes.lg, fontWeight: '800', color: Colors.text },
   ctaSubtitle: { fontSize: Fonts.sizes.sm, color: Colors.textSecondary, marginTop: 4 },
+
+  noteBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    backgroundColor: Colors.primary + '12',
+    borderRadius: Radii.md,
+    padding: Spacing.md,
+    marginHorizontal: Spacing.lg,
+    marginBottom: Spacing.lg,
+  },
+  noteBannerTitle: { fontSize: Fonts.sizes.sm, fontWeight: '700', color: Colors.text },
+  noteBannerText: { fontSize: Fonts.sizes.sm, color: Colors.textSecondary, marginTop: 2 },
+
+  aiCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    backgroundColor: Colors.surface,
+    borderRadius: Radii.md,
+    padding: Spacing.md,
+    marginHorizontal: Spacing.lg,
+    marginBottom: Spacing.lg,
+    ...Shadows.sm,
+  },
+  aiCardText: { flex: 1, fontSize: Fonts.sizes.sm, color: Colors.text, lineHeight: 20 },
+
+  tipCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    backgroundColor: Colors.warningLight,
+    borderRadius: Radii.md,
+    padding: Spacing.md,
+    marginHorizontal: Spacing.lg,
+    marginBottom: Spacing.lg,
+  },
+  tipEmoji: { fontSize: 20 },
+  tipLabel: { fontSize: Fonts.sizes.xs, fontWeight: '700', color: Colors.warning, marginBottom: 2 },
+  tipText: { flex: 1, fontSize: Fonts.sizes.sm, color: Colors.text, lineHeight: 19 },
 
   latestCard: { marginHorizontal: Spacing.lg, marginBottom: Spacing.lg },
   latestRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },

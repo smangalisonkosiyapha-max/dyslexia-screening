@@ -1,5 +1,6 @@
 // src/services/locationService.ts
 import * as Location from 'expo-location';
+import { Linking } from 'react-native';
 
 export interface NearbyResource {
   name: string;
@@ -51,3 +52,17 @@ const getMockResources = (): NearbyResource[] => [
   { name: 'Educational Psychology Practice', type: 'educational_psychologist', distance: '2.3 km', address: '17 Oak Ave' },
   { name: 'Peer Tutoring Centre', type: 'tutoring_centre', distance: '1.1 km', address: 'Student Union, Floor 2' },
 ];
+
+/**
+ * Opens the device's default maps app (or Google Maps in a browser as a
+ * fallback) with turn-by-turn directions to the given resource, starting
+ * from the user's current location. Works on both iOS and Android since
+ * it's a universal https link, not a platform-specific URL scheme.
+ */
+export const openDirections = (resource: NearbyResource) => {
+  const destination = encodeURIComponent(`${resource.name}, ${resource.address}`);
+  const url = `https://www.google.com/maps/dir/?api=1&destination=${destination}`;
+  Linking.openURL(url).catch(() => {
+    // Extremely unlikely to fail for a plain https URL — nothing to recover from.
+  });
+};
