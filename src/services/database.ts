@@ -20,6 +20,13 @@ import { isSupabaseConfigured } from './supabase';
 
 let db: SQLite.SQLiteDatabase;
 
+/** Owner id used for attempts in local-only mode (no backend, no accounts). */
+const LOCAL_OWNER = 'local';
+
+/** Who owns attempts on this phone right now: the signed-in user, or null if nobody is. */
+const currentOwnerId = async (): Promise<string | null> =>
+  isSupabaseConfigured ? await getCurrentUserId() : LOCAL_OWNER;
+
 /**
  * Races any promise against a timeout, so a stuck/hung database call fails
  * loudly after a few seconds instead of leaving a UI spinner stuck forever.
@@ -132,7 +139,8 @@ export const initDatabase = async (): Promise<void> => {
       accuracy REAL DEFAULT 0,
       risk_band TEXT,
       duration_seconds INTEGER DEFAULT 0,
-      synced INTEGER DEFAULT 0
+      synced INTEGER DEFAULT 0,
+      student_id TEXT
     );
 
     CREATE TABLE IF NOT EXISTS item_responses (
@@ -165,6 +173,23 @@ export const initDatabase = async (): Promise<void> => {
     }
   } catch (e) {
     console.warn('synced column migration skipped:', e);
+  }
+
+  // Attempts used to have no owner, so every account on a phone saw (and
+  // could upload) every other account's tests. Add the owner column.
+  // Older rows stay NULL — their owner is unknown, so they are hidden and
+  // never uploaded rather than being handed to whoever logs in next.
+  try {
+    const attemptCols = await db.getAllAsync<{ name: string }>(`PRAGMA table_info(test_attempts);`);
+    if (!attemptCols.some(c => c.name === 'student_id')) {
+      await db.execAsync(`ALTER TABLE test_attempts ADD COLUMN student_id TEXT;`);
+    }
+    if (!isSupabaseConfigured) {
+      // Local-only mode has a single implicit owner.
+      await db.execAsync(`UPDATE test_attempts SET student_id = '${LOCAL_OWNER}' WHERE student_id IS NULL;`);
+    }
+  } catch (e) {
+    console.warn('student_id column migration skipped:', e);
   }
 
   // Defensive migration for anyone who installed before caregiver_name/
@@ -225,9 +250,10 @@ const seedTestItems = async (): Promise<void> => {
 // ── Dyslexia Screening: Test Attempts ────────────────────────────────────
 
 export const insertTestAttempt = async (attempt: TestAttempt): Promise<void> => {
+  const ownerId = attempt.studentId ?? (await currentOwnerId());
   await db.runAsync(
-    `INSERT INTO test_attempts (id, test_type, started_at, completed_at, raw_score, max_score, accuracy, risk_band, duration_seconds, synced)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO test_attempts (id, test_type, started_at, completed_at, raw_score, max_score, accuracy, risk_band, duration_seconds, synced, student_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       attempt.id,
       attempt.testType,
@@ -239,6 +265,7 @@ export const insertTestAttempt = async (attempt: TestAttempt): Promise<void> => 
       attempt.riskBand ?? null,
       attempt.durationSeconds,
       attempt.synced ? 1 : 0,
+      ownerId,
     ]
   );
 };
@@ -248,8 +275,11 @@ export const markAttemptSynced = async (id: string): Promise<void> => {
 };
 
 export const getUnsyncedAttempts = async (): Promise<TestAttempt[]> => {
+  const ownerId = await currentOwnerId();
+  if (!ownerId) return [];
   const rows = await db.getAllAsync<any>(
-    `SELECT * FROM test_attempts WHERE synced = 0 OR synced IS NULL ORDER BY started_at ASC`
+    `SELECT * FROM test_attempts WHERE (synced = 0 OR synced IS NULL) AND student_id = ? ORDER BY started_at ASC`,
+    [ownerId]
   );
   return rows.map(rowToAttempt);
 };
@@ -280,9 +310,11 @@ export const getAttemptsForTest = async (
   testType: DyslexiaTestType,
   limit = 20
 ): Promise<TestAttempt[]> => {
+  const ownerId = await currentOwnerId();
+  if (!ownerId) return [];
   const rows = await db.getAllAsync<any>(
-    `SELECT * FROM test_attempts WHERE test_type = ? ORDER BY started_at DESC LIMIT ?`,
-    [testType, limit]
+    `SELECT * FROM test_attempts WHERE test_type = ? AND student_id = ? ORDER BY started_at DESC LIMIT ?`,
+    [testType, ownerId, limit]
   );
   return rows.map(rowToAttempt);
 };
@@ -293,9 +325,11 @@ export const getAttemptById = async (id: string): Promise<TestAttempt | null> =>
 };
 
 export const getAllAttempts = async (limit = 50): Promise<TestAttempt[]> => {
+  const ownerId = await currentOwnerId();
+  if (!ownerId) return [];
   const rows = await db.getAllAsync<any>(
-    `SELECT * FROM test_attempts ORDER BY started_at DESC LIMIT ?`,
-    [limit]
+    `SELECT * FROM test_attempts WHERE student_id = ? ORDER BY started_at DESC LIMIT ?`,
+    [ownerId, limit]
   );
   return rows.map(rowToAttempt);
 };
@@ -338,10 +372,13 @@ export const getRemedialExercisesForAttempt = async (
 
 /** Aggregated counts by risk band — the local-device basis for the Disability Unit reporting view. */
 export const getRiskBandCounts = async (): Promise<Record<RiskBand, number>> => {
-  const rows = await db.getAllAsync<any>(
-    `SELECT risk_band, COUNT(*) as n FROM test_attempts WHERE risk_band IS NOT NULL GROUP BY risk_band`
-  );
   const counts: Record<RiskBand, number> = { low: 0, moderate: 0, high: 0 };
+  const ownerId = await currentOwnerId();
+  if (!ownerId) return counts;
+  const rows = await db.getAllAsync<any>(
+    `SELECT risk_band, COUNT(*) as n FROM test_attempts WHERE risk_band IS NOT NULL AND student_id = ? GROUP BY risk_band`,
+    [ownerId]
+  );
   rows.forEach(r => {
     if (r.risk_band in counts) counts[r.risk_band as RiskBand] = r.n;
   });
@@ -558,6 +595,7 @@ const rowToAttempt = (row: any): TestAttempt => ({
   riskBand: row.risk_band ?? undefined,
   durationSeconds: row.duration_seconds,
   synced: !!row.synced,
+  studentId: row.student_id ?? undefined,
 });
 
 const rowToItemResponse = (row: any): ItemResponse => ({

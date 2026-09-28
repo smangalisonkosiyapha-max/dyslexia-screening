@@ -8,10 +8,7 @@
 
 import { supabase, isSupabaseConfigured } from './supabase';
 import {
-  getUnsyncedAttempts,
-  getResponsesForAttempt,
-  getRemedialExercisesForAttempt,
-  markAttemptSynced,
+  getUnsyncedAttempts, getResponsesForAttempt, getRemedialExercisesForAttempt, markAttemptSynced,
 } from './database';
 import { ItemResponse, RemedialExercise, TestAttempt } from '../constants/types';
 import { getCurrentUserId } from './authService';
@@ -52,24 +49,23 @@ const remedialToRow = (r: RemedialExercise) => ({
  * Call this right after the local insert in TestRunnerScreen. Never throws —
  * a failed push just leaves the attempt unsynced for the next retry.
  */
-export const syncAttempt = async (
-  attempt: TestAttempt,
-  responses: ItemResponse[]
-): Promise<boolean> => {
+export const syncAttempt = async (attempt: TestAttempt, responses: ItemResponse[]): Promise<boolean> => {
   if (!isSupabaseConfigured) return false;
-  const studentId = await getCurrentUserId();
-  if (!studentId) return false;
+  const sessionUserId = await getCurrentUserId();
+  if (!sessionUserId) return false;
+
+  // Upload under whoever actually took the test — never just "whoever is
+  // signed in right now", or one student's result ends up on another
+  // student's record. If it belongs to someone else, leave it for them.
+  const studentId = attempt.studentId ?? sessionUserId;
+  if (studentId !== sessionUserId) return false;
 
   try {
-    const { error: attemptError } = await supabase
-      .from('test_attempts')
-      .insert(attemptToRow(attempt, studentId));
+    const { error: attemptError } = await supabase.from('test_attempts').insert(attemptToRow(attempt, studentId));
     if (attemptError) throw attemptError;
 
     if (responses.length > 0) {
-      const { error: responsesError } = await supabase
-        .from('item_responses')
-        .insert(responses.map(responseToRow));
+      const { error: responsesError } = await supabase.from('item_responses').insert(responses.map(responseToRow));
       if (responsesError) throw responsesError;
     }
 
@@ -128,9 +124,7 @@ export const syncProfile = async (profile: {
     if (error) {
       console.warn('syncProfile failed:', error.message, error);
     } else if (!data || data.length === 0) {
-      console.warn(
-        'syncProfile: update matched 0 rows — RLS likely blocked it, or profile row does not exist for this id'
-      );
+      console.warn('syncProfile: update matched 0 rows — RLS likely blocked it, or profile row does not exist for this id');
     } else {
       console.log('syncProfile: success', data);
     }

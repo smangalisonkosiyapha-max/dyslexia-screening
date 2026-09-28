@@ -11,6 +11,7 @@ import {
   FlatList,
   Animated,
   Alert,
+  Keyboard,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -19,7 +20,11 @@ import * as Haptics from 'expo-haptics';
 import { Colors, Fonts, Spacing, Radii, Shadows } from '../constants/theme';
 import { Button } from '../components/UIComponents';
 import { upsertUser } from '../services/database';
-import { registerForPushNotificationsAsync, scheduleDailyCheckIn } from '../services/notifications';
+import {
+  registerForPushNotificationsAsync,
+  scheduleDailyCheckIn,
+  sendConfirmationNotification,
+} from '../services/notifications';
 import { requestLocationPermission } from '../services/locationService';
 import { syncProfile } from '../services/syncService';
 import { getCurrentUserId, getMyProfile } from '../services/authService';
@@ -92,6 +97,24 @@ const OnboardingScreen: React.FC<{ onComplete: () => void }> = ({ onComplete }) 
       .catch(() => {});
   }, []);
 
+  // The pager is driven by buttons (scrolling is disabled), so if the
+  // keyboard opening/closing nudges it off a slide boundary, snap it back
+  // to the slide we are actually on.
+  const currentIndexRef = useRef(0);
+  useEffect(() => {
+    currentIndexRef.current = currentIndex;
+  }, [currentIndex]);
+  useEffect(() => {
+    const snap = () =>
+      flatRef.current?.scrollToIndex({ index: currentIndexRef.current, animated: false });
+    const show = Keyboard.addListener('keyboardDidShow', snap);
+    const hide = Keyboard.addListener('keyboardDidHide', snap);
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
+
   const goNext = () => {
     if (currentIndex < SLIDES.length - 1) {
       flatRef.current?.scrollToIndex({ index: currentIndex + 1, animated: true });
@@ -105,6 +128,7 @@ const OnboardingScreen: React.FC<{ onComplete: () => void }> = ({ onComplete }) 
       const token = await registerForPushNotificationsAsync();
       if (token) {
         await scheduleDailyCheckIn();
+        sendConfirmationNotification(); // visible right away, unlike the 9:00 reminder
         setNotifGranted(true);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }
@@ -172,7 +196,6 @@ const OnboardingScreen: React.FC<{ onComplete: () => void }> = ({ onComplete }) 
               placeholderTextColor={Colors.textMuted}
               value={name}
               onChangeText={setName}
-              autoFocus
             />
           </View>
           <View style={styles.field}>
@@ -247,6 +270,8 @@ const OnboardingScreen: React.FC<{ onComplete: () => void }> = ({ onComplete }) 
         horizontal
         pagingEnabled
         scrollEnabled={false}
+        keyboardShouldPersistTaps="handled"
+        getItemLayout={(_, index) => ({ length: width, offset: width * index, index })}
         showsHorizontalScrollIndicator={false}
         onScroll={Animated.event([{ nativeEvent: { contentOffset: { x: scrollX } } }], {
           useNativeDriver: false,

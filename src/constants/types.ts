@@ -143,6 +143,8 @@ export interface TestAttempt {
   riskBand?: RiskBand;
   durationSeconds: number;
   synced?: boolean;
+  /** Supabase user who took this test — keeps attempts separate per account on a shared phone. */
+  studentId?: string;
 }
 
 /** One answered item within an attempt. */
@@ -190,4 +192,6 @@ export interface StudentSummary {
   lastRiskBand: RiskBand | null;
   lastTestType: DyslexiaTestType | null;
   lastAttemptAt: Date | null;
+  /** When the student's account was created — lets the admin see brand-new sign-ups who haven't tested yet. */
+  registeredAt?: Date | null;
 }

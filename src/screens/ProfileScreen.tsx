@@ -22,7 +22,11 @@ import { Button, Card } from '../components/UIComponents';
 import { getUser, upsertUser } from '../services/database';
 import { isSupabaseConfigured } from '../services/supabase';
 import { signOut, getCurrentUserId } from '../services/authService';
-import { registerForPushNotificationsAsync, scheduleDailyCheckIn } from '../services/notifications';
+import {
+  registerForPushNotificationsAsync,
+  scheduleDailyCheckIn,
+  sendConfirmationNotification,
+} from '../services/notifications';
 import { syncProfile } from '../services/syncService';
 import {
   requestLocationPermission,
@@ -80,6 +84,7 @@ const ProfileScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
           return;
         }
         await scheduleDailyCheckIn();
+        sendConfirmationNotification(); // visible right away, unlike the 9:00 reminder
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       } catch (e) {
         console.error('toggleNotifications error:', e);
@@ -228,6 +233,12 @@ const ProfileScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
             value={notifs}
             onChange={toggleNotifications}
           />
+          {notifs && (
+            <TouchableOpacity style={styles.testNotifBtn} onPress={sendConfirmationNotification} activeOpacity={0.7}>
+              <Ionicons name="paper-plane" size={14} color={Colors.primary} />
+              <Text style={styles.testNotifText}>Send a test notification</Text>
+            </TouchableOpacity>
+          )}
           <SettingRow
             icon="location"
             label="Location Services"
@@ -405,6 +416,8 @@ const styles = StyleSheet.create({
   resourceAddr: { fontSize: Fonts.sizes.xs, color: Colors.textSecondary },
   resourceDist: { fontSize: Fonts.sizes.xs, color: Colors.primary, fontWeight: '600' },
   directionsRow: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 3 },
+  testNotifBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', paddingVertical: 8, paddingHorizontal: 4 },
+  testNotifText: { fontSize: Fonts.sizes.sm, color: Colors.primary, fontWeight: '600' },
   directionsText: { fontSize: 10, color: Colors.primary, fontWeight: '700' },
   about: { fontSize: Fonts.sizes.sm, color: Colors.textSecondary, lineHeight: 22 },
 });

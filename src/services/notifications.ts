@@ -157,6 +157,31 @@ export const scheduleDailyCheckIn = async (hour = 9, minute = 0): Promise<void> 
   }
 };
 
+// ── Instant confirmation ─────────────────────────────────────────────────
+// The daily reminder only fires at its scheduled time, so nothing visible
+// happens when a student switches notifications on. This shows one within
+// ~2 seconds so they (or a demo audience) can see it working straight away.
+// Call it AFTER scheduleDailyCheckIn(), which clears pending notifications.
+export const sendConfirmationNotification = async (): Promise<void> => {
+  try {
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: '🔔 Notifications are on',
+        body: `You'll get a daily screening reminder. Today's tip: ${getTipOfTheDay()}`,
+        data: { type: 'confirmation' },
+        sound: 'default',
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+        seconds: 2,
+        ...(Platform.OS === 'android' ? { channelId: 'screening-reminders' } : {}),
+      } as any,
+    });
+  } catch (err) {
+    console.warn('sendConfirmationNotification error:', err);
+  }
+};
+
 // ── Cancellation helpers ──────────────────────────────────────────────────
 export const cancelNotification = async (id: string): Promise<void> => {
   try {

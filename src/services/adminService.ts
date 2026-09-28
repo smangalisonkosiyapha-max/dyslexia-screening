@@ -18,34 +18,45 @@ export const getAdminRiskBandCounts = async (): Promise<Record<RiskBand, number>
   return counts;
 };
 
-/** One row per student who has at least one attempt, with their most recent result. */
+/**
+ * One row per REGISTERED student, with their most recent result if they have
+ * one. Starting from profiles (not test_attempts) means students who have
+ * signed up but not tested yet still show up, so staff can see their contact
+ * details and reach out to them.
+ */
 export const getStudentSummaries = async (): Promise<StudentSummary[]> => {
   const { data, error } = await supabase
-    .from('test_attempts')
-    .select('student_id, test_type, risk_band, started_at, profiles!inner(name)')
-    .order('started_at', { ascending: false });
+    .from('profiles')
+    .select('id, name, created_at, test_attempts(test_type, risk_band, started_at)')
+    .eq('role', 'student');
 
+  if (error) console.warn('getStudentSummaries failed:', error.message);
   if (error || !data) return [];
 
-  const byStudent = new Map<string, StudentSummary>();
-  for (const row of data as any[]) {
-    const existing = byStudent.get(row.student_id);
-    if (existing) {
-      existing.attemptCount += 1;
-    } else {
-      byStudent.set(row.student_id, {
-        studentId: row.student_id,
-        name: row.profiles?.name ?? 'Unknown student',
-        attemptCount: 1,
-        lastRiskBand: row.risk_band as RiskBand | null,
-        lastTestType: row.test_type as DyslexiaTestType,
-        lastAttemptAt: new Date(row.started_at),
-      });
-    }
-  }
-  return Array.from(byStudent.values()).sort(
-    (a, b) => (b.lastAttemptAt?.getTime() ?? 0) - (a.lastAttemptAt?.getTime() ?? 0)
-  );
+  const summaries: StudentSummary[] = (data as any[]).map(p => {
+    const attempts = ((p.test_attempts ?? []) as any[])
+      .slice()
+      .sort((a, b) => new Date(b.started_at).getTime() - new Date(a.started_at).getTime());
+    const latest = attempts[0];
+    return {
+      studentId: p.id,
+      name: p.name ?? 'Unknown student',
+      attemptCount: attempts.length,
+      lastRiskBand: (latest?.risk_band as RiskBand | null) ?? null,
+      lastTestType: (latest?.test_type as DyslexiaTestType | undefined) ?? null,
+      lastAttemptAt: latest ? new Date(latest.started_at) : null,
+      registeredAt: p.created_at ? new Date(p.created_at) : null,
+    };
+  });
+
+  // Students with results first (most recent activity on top), then students
+  // who haven't tested yet, newest sign-up first.
+  return summaries.sort((a, b) => {
+    if (a.lastAttemptAt && b.lastAttemptAt) return b.lastAttemptAt.getTime() - a.lastAttemptAt.getTime();
+    if (a.lastAttemptAt) return -1;
+    if (b.lastAttemptAt) return 1;
+    return (b.registeredAt?.getTime() ?? 0) - (a.registeredAt?.getTime() ?? 0);
+  });
 };
 
 export interface AdminAttemptRow {

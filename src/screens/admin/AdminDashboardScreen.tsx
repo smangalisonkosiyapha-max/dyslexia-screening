@@ -75,8 +75,8 @@ const AdminDashboardScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
         {!loading && students.length === 0 && (
           <EmptyState
             emoji="📋"
-            title="No screenings yet"
-            subtitle="Once students complete a test, their results will appear here."
+            title="No students yet"
+            subtitle="Students appear here as soon as they sign up, even before they take a test."
           />
         )}
 
@@ -92,12 +92,18 @@ const AdminDashboardScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
               <View style={{ flex: 1 }}>
                 <Text style={styles.studentName}>{s.name}</Text>
                 <Text style={styles.studentMeta}>
-                  {s.attemptCount} attempt{s.attemptCount === 1 ? '' : 's'}
-                  {s.lastAttemptAt ? ` · last ${s.lastAttemptAt.toLocaleDateString()}` : ''}
+                  {s.attemptCount === 0
+                    ? `No tests yet${s.registeredAt ? ` · joined ${s.registeredAt.toLocaleDateString()}` : ''}`
+                    : `${s.attemptCount} attempt${s.attemptCount === 1 ? '' : 's'}` +
+                      (s.lastAttemptAt ? ` · last ${s.lastAttemptAt.toLocaleDateString()}` : '')}
                 </Text>
               </View>
-              {s.lastRiskBand && risk && (
+              {s.lastRiskBand && risk ? (
                 <Badge label={RISK_BAND_INFO[s.lastRiskBand].label} color={risk.color} bgColor={risk.bg} />
+              ) : (
+                s.attemptCount === 0 && (
+                  <Badge label="Not started" color={Colors.textSecondary} bgColor={Colors.textMuted + '22'} />
+                )
               )}
               <Ionicons name="chevron-forward" size={18} color={Colors.textMuted} style={{ marginLeft: Spacing.sm }} />
             </TouchableOpacity>
@@ -106,7 +112,7 @@ const AdminDashboardScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
 
         {total === 0 && !loading && (
           <Text style={styles.hint}>
-            Tip: sign up a second account as a student and complete a test to see data appear here.
+            Risk-band counts above fill in once students complete their first test.
           </Text>
         )}
       </ScrollView>
