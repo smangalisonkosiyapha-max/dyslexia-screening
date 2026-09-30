@@ -7,13 +7,16 @@
 import { supabase } from './supabase';
 import { RiskBand, StudentSummary, DyslexiaTestType } from '../constants/types';
 
-export const getAdminRiskBandCounts = async (): Promise<Record<RiskBand, number>> => {
-  const { data, error } = await supabase.from('test_attempts').select('risk_band');
+/**
+ * Counts ONE band per student: their most recent test result. Derived from the
+ * same StudentSummary rows the dashboard list uses, so the top cards and the
+ * list/filter chips can never disagree. Students who haven't tested yet are
+ * not counted in any band (they appear under "Not started").
+ */
+export const countLatestRiskBands = (students: StudentSummary[]): Record<RiskBand, number> => {
   const counts: Record<RiskBand, number> = { low: 0, moderate: 0, high: 0 };
-  if (error || !data) return counts;
-  for (const row of data) {
-    const band = row.risk_band as RiskBand | null;
-    if (band && band in counts) counts[band] += 1;
+  for (const s of students) {
+    if (s.lastRiskBand && s.lastRiskBand in counts) counts[s.lastRiskBand] += 1;
   }
   return counts;
 };
@@ -27,7 +30,7 @@ export const getAdminRiskBandCounts = async (): Promise<Record<RiskBand, number>
 export const getStudentSummaries = async (): Promise<StudentSummary[]> => {
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, name, created_at, test_attempts(test_type, risk_band, started_at)')
+    .select('id, name, email, created_at, test_attempts(test_type, risk_band, started_at)')
     .eq('role', 'student');
 
   if (error) console.warn('getStudentSummaries failed:', error.message);
@@ -46,13 +49,15 @@ export const getStudentSummaries = async (): Promise<StudentSummary[]> => {
       lastTestType: (latest?.test_type as DyslexiaTestType | undefined) ?? null,
       lastAttemptAt: latest ? new Date(latest.started_at) : null,
       registeredAt: p.created_at ? new Date(p.created_at) : null,
+      email: p.email ?? null,
     };
   });
 
   // Students with results first (most recent activity on top), then students
   // who haven't tested yet, newest sign-up first.
   return summaries.sort((a, b) => {
-    if (a.lastAttemptAt && b.lastAttemptAt) return b.lastAttemptAt.getTime() - a.lastAttemptAt.getTime();
+    if (a.lastAttemptAt && b.lastAttemptAt)
+      return b.lastAttemptAt.getTime() - a.lastAttemptAt.getTime();
     if (a.lastAttemptAt) return -1;
     if (b.lastAttemptAt) return 1;
     return (b.registeredAt?.getTime() ?? 0) - (a.registeredAt?.getTime() ?? 0);

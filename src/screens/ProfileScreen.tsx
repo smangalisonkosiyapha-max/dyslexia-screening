@@ -19,9 +19,9 @@ import { Colors, Fonts, Spacing, Radii, Shadows } from '../constants/theme';
 import { useScrollBottomPadding } from '../constants/layout';
 import { UserProfile } from '../constants/types';
 import { Button, Card } from '../components/UIComponents';
-import { getUser, upsertUser } from '../services/database';
+import { getUser, upsertUser, deleteLocalDataForOwner } from '../services/database';
 import { isSupabaseConfigured } from '../services/supabase';
-import { signOut, getCurrentUserId } from '../services/authService';
+import { signOut, getCurrentUserId, deleteMyAccount } from '../services/authService';
 import {
   registerForPushNotificationsAsync,
   scheduleDailyCheckIn,
@@ -140,6 +140,47 @@ const ProfileScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
       Alert.alert('Could not save', 'Something went wrong saving your profile. Please try again.');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const [deleting, setDeleting] = useState(false);
+
+  const confirmDeleteAccount = () => {
+    Alert.alert(
+      'Delete your account?',
+      'This permanently deletes your account, all test results, and any staff notes. This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete Everything',
+          style: 'destructive',
+          onPress: () => {
+            // A second confirmation for something this destructive.
+            Alert.alert(
+              'Are you absolutely sure?',
+              'Type nothing needed — just confirm one more time. There is no undo.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Yes, delete my account', style: 'destructive', onPress: doDeleteAccount },
+              ]
+            );
+          },
+        },
+      ]
+    );
+  };
+
+  const doDeleteAccount = async () => {
+    setDeleting(true);
+    try {
+      const ownerId = profile?.id;
+      await deleteMyAccount(); // deletes the Supabase account; server cascade removes everything tied to it
+      if (ownerId) await deleteLocalDataForOwner(ownerId); // tidy this device's local copy too
+      // signOut() inside deleteMyAccount() triggers App.tsx's auth listener,
+      // which routes back to the login screen automatically.
+    } catch (e: any) {
+      setDeleting(false);
+      Alert.alert('Could not delete account', e?.message ?? 'Please check your connection and try again.');
     }
   };
 
@@ -290,12 +331,21 @@ const ProfileScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
         </Card>
 
         {isSupabaseConfigured && (
-          <Button
-            title="Sign Out"
-            variant="outline"
-            onPress={() => signOut()}
-            style={{ marginHorizontal: Spacing.lg, marginTop: Spacing.md }}
-          />
+          <>
+            <Button
+              title="Sign Out"
+              variant="outline"
+              onPress={() => signOut()}
+              style={{ marginHorizontal: Spacing.lg, marginTop: Spacing.md }}
+            />
+            <Button
+              title={deleting ? 'Deleting…' : 'Delete My Account'}
+              variant="danger"
+              disabled={deleting}
+              onPress={confirmDeleteAccount}
+              style={{ marginHorizontal: Spacing.lg, marginTop: Spacing.sm }}
+            />
+          </>
         )}
       </ScrollView>
     </SafeAreaView>

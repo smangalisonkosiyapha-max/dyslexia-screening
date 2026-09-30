@@ -165,6 +165,10 @@ export interface RemedialExercise {
   content: string;
   generatedAt: Date;
   source: 'ai' | 'fallback';
+  /** Position within a 3-step practice program (0, 1 or 2) — lets a batch of exercises render as an ordered checklist. */
+  stepIndex?: number;
+  /** Whether the student has ticked this step off. */
+  completed?: boolean;
 }
 
 /** Per-marker breakdown used on the Results screen and for remediation targeting. */
@@ -194,4 +198,6 @@ export interface StudentSummary {
   lastAttemptAt: Date | null;
   /** When the student's account was created — lets the admin see brand-new sign-ups who haven't tested yet. */
   registeredAt?: Date | null;
+  /** For the admin search box. */
+  email?: string | null;
 }

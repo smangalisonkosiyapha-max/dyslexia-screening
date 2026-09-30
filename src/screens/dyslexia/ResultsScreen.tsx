@@ -5,7 +5,7 @@
 // the Sequence Diagram slide.)
 
 import React, { useEffect, useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Colors, Fonts, Spacing, Radii, Shadows } from '../../constants/theme';
@@ -15,9 +15,11 @@ import { MarkerBreakdown, RemedialExercise, TestAttempt } from '../../constants/
 import { Card, Button, ProgressBar, Badge } from '../../components/UIComponents';
 import {
   getAttemptById, getMarkerBreakdown, getRemedialExercisesForAttempt, insertRemedialExercise,
+  markExerciseComplete,
 } from '../../services/database';
-import { generateRemedialExercise, weakestMarker } from '../../services/dyslexiaService';
+import { generateRemedialProgram, weakestMarker } from '../../services/dyslexiaService';
 import { syncRemedialExercise } from '../../services/syncService';
+import { Ionicons } from '@expo/vector-icons';
 
 const RISK_COLORS = {
   low: { color: Colors.success, bg: Colors.successLight },
@@ -61,21 +63,32 @@ const ResultsScreen: React.FC<{ route: any; navigation: any }> = ({ route, navig
     if (!weak || !attempt) return;
     setGenerating(true);
     try {
-      const { content, source } = await generateRemedialExercise(weak.marker, weak.correct / weak.total);
-      const record: RemedialExercise = {
-        id: `remex_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      const steps = await generateRemedialProgram(weak.marker, weak.correct / weak.total);
+      const newRecords: RemedialExercise[] = steps.map((step, i) => ({
+        id: `remex_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 7)}`,
         attemptId: attempt.id,
         marker: weak.marker,
-        content,
+        content: step.content,
         generatedAt: new Date(),
-        source,
-      };
-      await insertRemedialExercise(record);
-      setExercises(prev => [...prev, record]);
-      syncRemedialExercise(record); // best-effort, non-blocking
+        source: step.source,
+        stepIndex: i,
+        completed: false,
+      }));
+      for (const record of newRecords) {
+        await insertRemedialExercise(record);
+        syncRemedialExercise(record); // best-effort, non-blocking
+      }
+      setExercises(prev => [...prev, ...newRecords]);
     } finally {
       setGenerating(false);
     }
+  };
+
+  const toggleStepComplete = async (ex: RemedialExercise) => {
+    const nextCompleted = !ex.completed;
+    setExercises(prev => prev.map(e => (e.id === ex.id ? { ...e, completed: nextCompleted } : e)));
+    await markExerciseComplete(ex.id, nextCompleted);
+    syncRemedialExercise({ ...ex, completed: nextCompleted }); // best-effort, non-blocking
   };
 
   if (!attempt) {
@@ -142,30 +155,73 @@ const ResultsScreen: React.FC<{ route: any; navigation: any }> = ({ route, navig
 
         {showRemediation && (
           <Card>
-            <Text style={styles.sectionTitle}>Personalised Practice</Text>
+            <Text style={styles.sectionTitle}>Personalised Practice Program</Text>
             {exercises.length === 0 ? (
+              <Text style={styles.helperText}>
+                Get a 3-step practice program targeting the area you found trickiest — each step a little harder than the last.
+              </Text>
+            ) : (
               <>
                 <Text style={styles.helperText}>
-                  Get a short practice exercise targeting the area you found trickiest.
+                  {exercises.filter(e => e.completed).length} of {exercises.length} steps done. Tick a step off as you complete it.
                 </Text>
-                <Button
-                  title="Generate Practice Exercise"
-                  onPress={handleGenerate}
-                  loading={generating}
-                  style={{ marginTop: Spacing.md }}
-                />
+                {(() => {
+                  // Group into batches wherever stepIndex resets to 0 — each
+                  // "Get a Different Set" click starts a new batch, so this
+                  // labels them clearly instead of showing one long,
+                  // confusing continuous list of "Step 1/2/3" repeating.
+                  const batches: RemedialExercise[][] = [];
+                  exercises.forEach(ex => {
+                    if ((ex.stepIndex ?? 0) === 0 || batches.length === 0) batches.push([]);
+                    batches[batches.length - 1].push(ex);
+                  });
+                  return batches.map((batch, batchIndex) => (
+                    <View key={batchIndex} style={styles.batchGroup}>
+                      {batches.length > 1 && (
+                        <Text style={styles.batchLabel}>
+                          Set {batchIndex + 1}{batchIndex === batches.length - 1 ? ' (current)' : ''}
+                        </Text>
+                      )}
+                      {batch.map(ex => (
+                        <View key={ex.id} style={styles.exerciseBox}>
+                          <View style={styles.exerciseHeader}>
+                            <Text style={styles.exerciseMarker}>
+                              Step {(ex.stepIndex ?? 0) + 1} · {MARKER_LABELS[ex.marker] ?? ex.marker}
+                            </Text>
+                            <TouchableOpacity onPress={() => toggleStepComplete(ex)} hitSlop={8}>
+                              <Ionicons
+                                name={ex.completed ? 'checkbox' : 'square-outline'}
+                                size={22}
+                                color={ex.completed ? Colors.success : Colors.textMuted}
+                              />
+                            </TouchableOpacity>
+                          </View>
+                          <Text style={[styles.exerciseContent, ex.completed && styles.exerciseContentDone]}>
+                            {ex.content}
+                          </Text>
+                          {ex.source === 'fallback' && (
+                            <Text style={styles.fallbackNote}>Shown offline — AI suggestion unavailable right now.</Text>
+                          )}
+                        </View>
+                      ))}
+                    </View>
+                  ));
+                })()}
               </>
-            ) : (
-              exercises.map(ex => (
-                <View key={ex.id} style={styles.exerciseBox}>
-                  <Text style={styles.exerciseMarker}>{MARKER_LABELS[ex.marker] ?? ex.marker}</Text>
-                  <Text style={styles.exerciseContent}>{ex.content}</Text>
-                  {ex.source === 'fallback' && (
-                    <Text style={styles.fallbackNote}>Shown offline — AI suggestion unavailable right now.</Text>
-                  )}
-                </View>
-              ))
             )}
+            <Button
+              title={
+                generating
+                  ? 'Generating…'
+                  : exercises.length === 0
+                    ? 'Generate Practice Program'
+                    : 'Get a Different Set'
+              }
+              onPress={handleGenerate}
+              loading={generating}
+              variant={exercises.length === 0 ? 'primary' : 'outline'}
+              style={{ marginTop: Spacing.md }}
+            />
           </Card>
         )}
 
@@ -194,8 +250,12 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: Fonts.sizes.md, fontWeight: '700', color: Colors.text, marginBottom: Spacing.md },
   helperText: { fontSize: Fonts.sizes.sm, color: Colors.textSecondary, lineHeight: 19 },
   exerciseBox: { backgroundColor: Colors.primaryLight, borderRadius: Radii.md, padding: Spacing.md, marginBottom: Spacing.sm },
-  exerciseMarker: { fontSize: Fonts.sizes.xs, fontWeight: '700', color: Colors.primary, marginBottom: 4, textTransform: 'uppercase' },
+  batchGroup: { marginBottom: Spacing.sm },
+  batchLabel: { fontSize: Fonts.sizes.xs, fontWeight: '700', color: Colors.textSecondary, marginBottom: 6, textTransform: 'uppercase' },
+  exerciseHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
+  exerciseMarker: { fontSize: Fonts.sizes.xs, fontWeight: '700', color: Colors.primary, textTransform: 'uppercase', flex: 1 },
   exerciseContent: { fontSize: Fonts.sizes.sm, color: Colors.text, lineHeight: 20 },
+  exerciseContentDone: { textDecorationLine: 'line-through', color: Colors.textMuted },
   fallbackNote: { fontSize: Fonts.sizes.xs, color: Colors.textMuted, marginTop: 6, fontStyle: 'italic' },
 });
 

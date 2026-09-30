@@ -108,10 +108,29 @@ create table if not exists public.remedial_exercises (
   marker text not null,
   content text not null,
   generated_at timestamptz not null default now(),
-  source text not null default 'ai' check (source in ('ai', 'fallback'))
+  source text not null default 'ai' check (source in ('ai', 'fallback')),
+  step_index integer not null default 0,
+  completed boolean not null default false
 );
 
 create index if not exists remedial_exercises_attempt_idx on public.remedial_exercises(attempt_id);
+
+-- Lets a signed-in user delete their own account end-to-end (profiles,
+-- test_attempts, item_responses, remedial_exercises and student_notes all
+-- cascade via ON DELETE CASCADE once the auth.users row is removed).
+-- SECURITY DEFINER is required because deleting from auth.users needs
+-- elevated privilege a normal authenticated client doesn't have.
+create or replace function public.delete_own_account()
+returns void
+language plpgsql
+security definer set search_path = public, auth
+as $$
+begin
+  delete from auth.users where id = auth.uid();
+end;
+$$;
+
+grant execute on function public.delete_own_account() to authenticated;
 
 -- ============================================================================
 -- Row Level Security — NFR2/NFR6: a student only ever reads their own data;

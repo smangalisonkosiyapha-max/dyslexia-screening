@@ -158,7 +158,9 @@ export const initDatabase = async (): Promise<void> => {
       marker TEXT NOT NULL,
       content TEXT NOT NULL,
       generated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      source TEXT DEFAULT 'ai'
+      source TEXT DEFAULT 'ai',
+      step_index INTEGER DEFAULT 0,
+      completed INTEGER DEFAULT 0
     );
   `);
 
@@ -216,6 +218,22 @@ export const initDatabase = async (): Promise<void> => {
     }
   } catch (e) {
     console.warn('emergency_contact column migration skipped:', e);
+  }
+
+  // Defensive migration: remedial_exercises used to be one exercise per
+  // generation. Adding step_index/completed turns it into an ordered,
+  // trackable 3-step practice program without needing a fresh install.
+  try {
+    const exCols = await db.getAllAsync<{ name: string }>(`PRAGMA table_info(remedial_exercises);`);
+    const exNames = exCols.map(c => c.name);
+    if (!exNames.includes('step_index')) {
+      await db.execAsync(`ALTER TABLE remedial_exercises ADD COLUMN step_index INTEGER DEFAULT 0;`);
+    }
+    if (!exNames.includes('completed')) {
+      await db.execAsync(`ALTER TABLE remedial_exercises ADD COLUMN completed INTEGER DEFAULT 0;`);
+    }
+  } catch (e) {
+    console.warn('remedial_exercises step_index/completed migration skipped:', e);
   }
 
   await seedTestItems();
@@ -354,9 +372,12 @@ export const getMarkerBreakdown = async (attemptId: string): Promise<MarkerBreak
 
 export const insertRemedialExercise = async (ex: RemedialExercise): Promise<void> => {
   await db.runAsync(
-    `INSERT INTO remedial_exercises (id, attempt_id, marker, content, generated_at, source)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-    [ex.id, ex.attemptId, ex.marker, ex.content, ex.generatedAt.toISOString(), ex.source]
+    `INSERT INTO remedial_exercises (id, attempt_id, marker, content, generated_at, source, step_index, completed)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      ex.id, ex.attemptId, ex.marker, ex.content, ex.generatedAt.toISOString(), ex.source,
+      ex.stepIndex ?? 0, ex.completed ? 1 : 0,
+    ]
   );
 };
 
@@ -364,10 +385,14 @@ export const getRemedialExercisesForAttempt = async (
   attemptId: string
 ): Promise<RemedialExercise[]> => {
   const rows = await db.getAllAsync<any>(
-    `SELECT * FROM remedial_exercises WHERE attempt_id = ? ORDER BY generated_at ASC`,
+    `SELECT * FROM remedial_exercises WHERE attempt_id = ? ORDER BY generated_at ASC, step_index ASC`,
     [attemptId]
   );
   return rows.map(rowToRemedialExercise);
+};
+
+export const markExerciseComplete = async (id: string, completed: boolean): Promise<void> => {
+  await db.runAsync(`UPDATE remedial_exercises SET completed = ? WHERE id = ?`, [completed ? 1 : 0, id]);
 };
 
 /** Aggregated counts by risk band — the local-device basis for the Disability Unit reporting view. */
@@ -489,6 +514,30 @@ export const insertExerciseSession = async (session: ExerciseSession): Promise<v
 };
 
 // ── User ──────────────────────────────────────────────────────────────────
+
+/**
+ * Clears this device's local copy of one account's data (used right before
+ * signing out after a full account deletion). Supabase is the real delete —
+ * this just tidies the phone so a re-installed/re-used account doesn't see
+ * stale local rows. Safe to no-op on any failure; it's cleanup, not
+ * correctness-critical, since every query is already scoped by owner.
+ */
+export const deleteLocalDataForOwner = async (ownerId: string): Promise<void> => {
+  try {
+    const attempts = await db.getAllAsync<{ id: string }>(
+      `SELECT id FROM test_attempts WHERE student_id = ?`,
+      [ownerId]
+    );
+    for (const { id } of attempts) {
+      await db.runAsync(`DELETE FROM item_responses WHERE attempt_id = ?`, [id]);
+      await db.runAsync(`DELETE FROM remedial_exercises WHERE attempt_id = ?`, [id]);
+    }
+    await db.runAsync(`DELETE FROM test_attempts WHERE student_id = ?`, [ownerId]);
+    await db.runAsync(`DELETE FROM users WHERE id = ?`, [ownerId]);
+  } catch (e) {
+    console.warn('deleteLocalDataForOwner failed (non-fatal):', e);
+  }
+};
 
 export const getUser = async (): Promise<UserProfile | null> => {
   // Scoped to the currently signed-in Supabase user — without this, on a
@@ -614,4 +663,6 @@ const rowToRemedialExercise = (row: any): RemedialExercise => ({
   content: row.content,
   generatedAt: new Date(row.generated_at),
   source: row.source,
+  stepIndex: row.step_index ?? 0,
+  completed: !!row.completed,
 });

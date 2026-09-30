@@ -42,6 +42,8 @@ const remedialToRow = (r: RemedialExercise) => ({
   content: r.content,
   generated_at: r.generatedAt.toISOString(),
   source: r.source,
+  step_index: r.stepIndex ?? 0,
+  completed: r.completed ?? false,
 });
 
 /**
@@ -81,7 +83,9 @@ export const syncAttempt = async (attempt: TestAttempt, responses: ItemResponse[
 export const syncRemedialExercise = async (exercise: RemedialExercise): Promise<void> => {
   if (!isSupabaseConfigured) return;
   try {
-    await supabase.from('remedial_exercises').insert(remedialToRow(exercise));
+    // upsert (not insert) so re-syncing after the student ticks a step off
+    // updates the existing row instead of failing on a duplicate id.
+    await supabase.from('remedial_exercises').upsert(remedialToRow(exercise));
   } catch (e) {
     console.warn('syncRemedialExercise failed (non-fatal):', e);
   }

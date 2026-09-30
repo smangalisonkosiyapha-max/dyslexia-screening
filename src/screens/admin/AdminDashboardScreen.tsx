@@ -4,7 +4,15 @@
 // (public.is_admin()) — this screen just renders what the query returns.
 
 import React, { useCallback, useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, RefreshControl, TouchableOpacity } from 'react-native';
+import {
+  View,
+  Text,
+  ScrollView,
+  StyleSheet,
+  RefreshControl,
+  TouchableOpacity,
+  TextInput,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -14,7 +22,7 @@ import { useScrollBottomPadding } from '../../constants/layout';
 import { StudentSummary, RiskBand } from '../../constants/types';
 import { RISK_BAND_INFO } from '../../constants/dyslexiaTests';
 import { StatCard, Badge, EmptyState } from '../../components/UIComponents';
-import { getAdminRiskBandCounts, getStudentSummaries } from '../../services/adminService';
+import { countLatestRiskBands, getStudentSummaries } from '../../services/adminService';
 import { signOut } from '../../services/authService';
 
 const RISK_COLORS: Record<RiskBand, { color: string; bg: string }> = {
@@ -29,15 +37,21 @@ const AdminDashboardScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
   const [students, setStudents] = useState<StudentSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [search, setSearch] = useState('');
+  const [riskFilter, setRiskFilter] = useState<RiskBand | 'all' | 'not_started'>('all');
 
   const load = useCallback(async () => {
-    const [c, s] = await Promise.all([getAdminRiskBandCounts(), getStudentSummaries()]);
-    setCounts(c);
+    const s = await getStudentSummaries();
+    setCounts(countLatestRiskBands(s));
     setStudents(s);
     setLoading(false);
   }, []);
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load])
+  );
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -46,6 +60,28 @@ const AdminDashboardScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
   };
 
   const total = counts.low + counts.moderate + counts.high;
+
+  const filteredStudents = students.filter(s => {
+    const matchesSearch =
+      !search.trim() ||
+      s.name.toLowerCase().includes(search.trim().toLowerCase()) ||
+      (s.email ?? '').toLowerCase().includes(search.trim().toLowerCase());
+    const matchesRisk =
+      riskFilter === 'all'
+        ? true
+        : riskFilter === 'not_started'
+          ? s.attemptCount === 0
+          : s.lastRiskBand === riskFilter;
+    return matchesSearch && matchesRisk;
+  });
+
+  const RISK_FILTERS: { key: RiskBand | 'all' | 'not_started'; label: string }[] = [
+    { key: 'all', label: 'All' },
+    { key: 'low', label: 'Low' },
+    { key: 'moderate', label: 'Moderate' },
+    { key: 'high', label: 'High' },
+    { key: 'not_started', label: 'Not started' },
+  ];
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -62,7 +98,13 @@ const AdminDashboardScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: bottomPadding, paddingHorizontal: Spacing.lg }}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={Colors.primary}
+          />
+        }
       >
         <View style={styles.statsRow}>
           <StatCard label="Low risk" value={counts.low} icon="🟢" color={Colors.success} />
@@ -70,7 +112,42 @@ const AdminDashboardScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
           <StatCard label="High risk" value={counts.high} icon="🔴" color={Colors.danger} />
         </View>
 
-        <Text style={styles.sectionTitle}>Students ({students.length})</Text>
+        <View style={styles.searchRow}>
+          <Ionicons name="search" size={16} color={Colors.textMuted} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search by name or email"
+            placeholderTextColor={Colors.textMuted}
+            value={search}
+            onChangeText={setSearch}
+          />
+          {search.length > 0 && (
+            <TouchableOpacity onPress={() => setSearch('')} hitSlop={8}>
+              <Ionicons name="close-circle" size={16} color={Colors.textMuted} />
+            </TouchableOpacity>
+          )}
+        </View>
+
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterRow}>
+          {RISK_FILTERS.map(f => (
+            <TouchableOpacity
+              key={f.key}
+              style={[styles.filterChip, riskFilter === f.key && styles.filterChipActive]}
+              onPress={() => setRiskFilter(f.key)}
+            >
+              <Text
+                style={[styles.filterChipText, riskFilter === f.key && styles.filterChipTextActive]}
+              >
+                {f.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+
+        <Text style={styles.sectionTitle}>
+          Students ({filteredStudents.length}
+          {filteredStudents.length !== students.length ? ` of ${students.length}` : ''})
+        </Text>
 
         {!loading && students.length === 0 && (
           <EmptyState
@@ -80,13 +157,19 @@ const AdminDashboardScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
           />
         )}
 
-        {students.map(s => {
+        {!loading && students.length > 0 && filteredStudents.length === 0 && (
+          <Text style={styles.hint}>No students match this search/filter.</Text>
+        )}
+
+        {filteredStudents.map(s => {
           const risk = s.lastRiskBand ? RISK_COLORS[s.lastRiskBand] : null;
           return (
             <TouchableOpacity
               key={s.studentId}
               style={styles.studentRow}
-              onPress={() => navigation.navigate('StudentDetail', { studentId: s.studentId, name: s.name })}
+              onPress={() =>
+                navigation.navigate('StudentDetail', { studentId: s.studentId, name: s.name })
+              }
               activeOpacity={0.7}
             >
               <View style={{ flex: 1 }}>
@@ -99,13 +182,26 @@ const AdminDashboardScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
                 </Text>
               </View>
               {s.lastRiskBand && risk ? (
-                <Badge label={RISK_BAND_INFO[s.lastRiskBand].label} color={risk.color} bgColor={risk.bg} />
+                <Badge
+                  label={RISK_BAND_INFO[s.lastRiskBand].label}
+                  color={risk.color}
+                  bgColor={risk.bg}
+                />
               ) : (
                 s.attemptCount === 0 && (
-                  <Badge label="Not started" color={Colors.textSecondary} bgColor={Colors.textMuted + '22'} />
+                  <Badge
+                    label="Not started"
+                    color={Colors.textSecondary}
+                    bgColor={Colors.textMuted + '22'}
+                  />
                 )
               )}
-              <Ionicons name="chevron-forward" size={18} color={Colors.textMuted} style={{ marginLeft: Spacing.sm }} />
+              <Ionicons
+                name="chevron-forward"
+                size={18}
+                color={Colors.textMuted}
+                style={{ marginLeft: Spacing.sm }}
+              />
             </TouchableOpacity>
           );
         })}
@@ -123,22 +219,64 @@ const AdminDashboardScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
   header: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start',
-    paddingHorizontal: Spacing.lg, paddingTop: Spacing.md, marginBottom: Spacing.lg,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.md,
+    marginBottom: Spacing.lg,
   },
   title: { fontSize: Fonts.sizes.xxl, fontWeight: '800', color: Colors.text },
   subtitle: { fontSize: Fonts.sizes.sm, color: Colors.textSecondary, marginTop: 2 },
   statsRow: { flexDirection: 'row', gap: Spacing.sm, marginBottom: Spacing.xl },
-  sectionTitle: { fontSize: Fonts.sizes.md, fontWeight: '700', color: Colors.text, marginBottom: Spacing.md },
+  sectionTitle: {
+    fontSize: Fonts.sizes.md,
+    fontWeight: '700',
+    color: Colors.text,
+    marginBottom: Spacing.md,
+  },
   studentRow: {
-    flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.surface,
-    borderRadius: Radii.md, padding: Spacing.md, marginBottom: Spacing.sm, ...Shadows.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.surface,
+    borderRadius: Radii.md,
+    padding: Spacing.md,
+    marginBottom: Spacing.sm,
+    ...Shadows.sm,
   },
   studentName: { fontSize: Fonts.sizes.md, fontWeight: '700', color: Colors.text },
   studentMeta: { fontSize: Fonts.sizes.xs, color: Colors.textMuted, marginTop: 2 },
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: Colors.surface,
+    borderRadius: Radii.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 10,
+    marginBottom: Spacing.sm,
+    ...Shadows.sm,
+  },
+  searchInput: { flex: 1, fontSize: Fonts.sizes.sm, color: Colors.text },
+  filterRow: { marginBottom: Spacing.md },
+  filterChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: Radii.full,
+    backgroundColor: Colors.surface,
+    marginRight: 8,
+    ...Shadows.sm,
+  },
+  filterChipActive: { backgroundColor: Colors.primary },
+  filterChipText: { fontSize: Fonts.sizes.xs, fontWeight: '600', color: Colors.textSecondary },
+  filterChipTextActive: { color: '#FFFFFF' },
   hint: {
-    fontSize: Fonts.sizes.xs, color: Colors.textMuted, textAlign: 'center',
-    marginTop: Spacing.lg, lineHeight: 16, paddingHorizontal: Spacing.lg,
+    fontSize: Fonts.sizes.xs,
+    color: Colors.textMuted,
+    textAlign: 'center',
+    marginTop: Spacing.lg,
+    lineHeight: 16,
+    paddingHorizontal: Spacing.lg,
   },
 });
 

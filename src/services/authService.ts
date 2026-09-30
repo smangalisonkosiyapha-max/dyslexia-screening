@@ -22,6 +22,19 @@ export const signOut = async (): Promise<void> => {
 };
 
 /**
+ * Deletes the signed-in student's account entirely: auth record, profile,
+ * every test attempt, response, remedial exercise and staff note tied to it
+ * (all cascade at the database level — see delete_own_account() in
+ * schema.sql). This is genuinely destructive and cannot be undone; the
+ * caller (ProfileScreen) is responsible for confirming with the user first.
+ */
+export const deleteMyAccount = async (): Promise<void> => {
+  const { error } = await supabase.rpc('delete_own_account');
+  if (error) throw error;
+  await supabase.auth.signOut();
+};
+
+/**
  * Sends a password-reset email. The link in the email redirects back INTO
  * the app via a deep link (cognicare://reset-password in a built app, or an
  * exp:// URL in Expo Go), where App.tsx picks up the recovery tokens and

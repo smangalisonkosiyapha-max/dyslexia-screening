@@ -83,6 +83,7 @@ const OnboardingScreen: React.FC<{ onComplete: () => void }> = ({ onComplete }) 
   // Form state
   const [name, setName] = useState('');
   const [emergencyContactName, setEmergencyContactName] = useState('');
+  const [emergencyContactPhone, setEmergencyContactPhone] = useState('');
   const [notifGranted, setNotifGranted] = useState(false);
   const [locationGranted, setLocationGranted] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -158,6 +159,7 @@ const OnboardingScreen: React.FC<{ onComplete: () => void }> = ({ onComplete }) 
       id: userId,
       name: name.trim(),
       emergencyContactName: emergencyContactName.trim() || undefined,
+      emergencyContactPhone: emergencyContactPhone.trim() || undefined,
       onboardingComplete: true,
       notificationsEnabled: notifGranted,
       locationEnabled: locationGranted,
@@ -172,89 +174,114 @@ const OnboardingScreen: React.FC<{ onComplete: () => void }> = ({ onComplete }) 
       onComplete();
     } catch (e) {
       console.error('Onboarding finish failed:', e);
-      Alert.alert('Could not save', 'Something went wrong setting up your profile. Please try again.');
+      Alert.alert(
+        'Could not save',
+        'Something went wrong setting up your profile. Please try again.'
+      );
     } finally {
       setSaving(false);
     }
   };
 
   const renderSlide = ({ item }: { item: (typeof SLIDES)[0] }) => (
-    <View style={[styles.slide, { width }]}>
-      <View style={[styles.emojiCircle, { backgroundColor: item.color + '20' }]}>
-        <Text style={styles.emoji}>{item.emoji}</Text>
-      </View>
-      <Text style={styles.slideTitle}>{item.title}</Text>
-      <Text style={styles.slideSubtitle}>{item.subtitle}</Text>
-
-      {item.isForm && (
-        <View style={styles.form}>
-          <View style={styles.field}>
-            <Text style={styles.fieldLabel}>Your Name *</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="e.g. Sarah"
-              placeholderTextColor={Colors.textMuted}
-              value={name}
-              onChangeText={setName}
-            />
-          </View>
-          <View style={styles.field}>
-            <Text style={styles.fieldLabel}>Emergency Contact / Support Person (optional)</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="e.g. Mom, Dr. Smith"
-              placeholderTextColor={Colors.textMuted}
-              value={emergencyContactName}
-              onChangeText={setEmergencyContactName}
-            />
-          </View>
-
-          <Text style={styles.permissionsTitle}>App Permissions</Text>
-
-          <TouchableOpacity
-            style={[styles.permBtn, notifGranted && styles.permBtnGranted]}
-            onPress={enableNotifications}
-          >
-            <Ionicons
-              name={notifGranted ? 'checkmark-circle' : 'notifications-outline'}
-              size={22}
-              color={notifGranted ? Colors.success : Colors.primary}
-            />
-            <View style={{ flex: 1, marginLeft: 12 }}>
-              <Text style={styles.permLabel}>Push Notifications</Text>
-              <Text style={styles.permSub}>Reminders, AI alerts, daily check-ins</Text>
-            </View>
-            <Text
-              style={[styles.permStatus, { color: notifGranted ? Colors.success : Colors.primary }]}
-            >
-              {notifGranted ? 'Enabled ✓' : 'Enable'}
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.permBtn, locationGranted && styles.permBtnGranted]}
-            onPress={enableLocation}
-          >
-            <Ionicons
-              name={locationGranted ? 'checkmark-circle' : 'location-outline'}
-              size={22}
-              color={locationGranted ? Colors.success : Colors.primary}
-            />
-            <View style={{ flex: 1, marginLeft: 12 }}>
-              <Text style={styles.permLabel}>Location</Text>
-              <Text style={styles.permSub}>Find nearby Disability Unit & learning support</Text>
-            </View>
-            <Text
-              style={[
-                styles.permStatus,
-                { color: locationGranted ? Colors.success : Colors.primary },
-              ]}
-            >
-              {locationGranted ? 'Enabled ✓' : 'Enable'}
-            </Text>
-          </TouchableOpacity>
+    <View style={{ width, flex: 1 }}>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={styles.slide}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        nestedScrollEnabled
+      >
+        <View style={[styles.emojiCircle, { backgroundColor: item.color + '20' }]}>
+          <Text style={styles.emoji}>{item.emoji}</Text>
         </View>
-      )}
+        <Text style={styles.slideTitle}>{item.title}</Text>
+        <Text style={styles.slideSubtitle}>{item.subtitle}</Text>
+
+        {item.isForm && (
+          <View style={styles.form}>
+            <View style={styles.field}>
+              <Text style={styles.fieldLabel}>Your Name *</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="e.g. Sarah"
+                placeholderTextColor={Colors.textMuted}
+                value={name}
+                onChangeText={setName}
+              />
+            </View>
+            <View style={styles.field}>
+              <Text style={styles.fieldLabel}>Emergency Contact / Support Person (optional)</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="e.g. Mom, Dr. Smith"
+                placeholderTextColor={Colors.textMuted}
+                value={emergencyContactName}
+                onChangeText={setEmergencyContactName}
+              />
+            </View>
+            <View style={styles.field}>
+              <Text style={styles.fieldLabel}>Emergency Contact Phone (optional)</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="e.g. 082 123 4567"
+                placeholderTextColor={Colors.textMuted}
+                value={emergencyContactPhone}
+                onChangeText={setEmergencyContactPhone}
+                keyboardType="phone-pad"
+              />
+            </View>
+
+            <Text style={styles.permissionsTitle}>App Permissions</Text>
+
+            <TouchableOpacity
+              style={[styles.permBtn, notifGranted && styles.permBtnGranted]}
+              onPress={enableNotifications}
+            >
+              <Ionicons
+                name={notifGranted ? 'checkmark-circle' : 'notifications-outline'}
+                size={22}
+                color={notifGranted ? Colors.success : Colors.primary}
+              />
+              <View style={{ flex: 1, marginLeft: 12 }}>
+                <Text style={styles.permLabel}>Push Notifications</Text>
+                <Text style={styles.permSub}>Reminders, AI alerts, daily check-ins</Text>
+              </View>
+              <Text
+                style={[
+                  styles.permStatus,
+                  { color: notifGranted ? Colors.success : Colors.primary },
+                ]}
+              >
+                {notifGranted ? 'Enabled ✓' : 'Enable'}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.permBtn, locationGranted && styles.permBtnGranted]}
+              onPress={enableLocation}
+            >
+              <Ionicons
+                name={locationGranted ? 'checkmark-circle' : 'location-outline'}
+                size={22}
+                color={locationGranted ? Colors.success : Colors.primary}
+              />
+              <View style={{ flex: 1, marginLeft: 12 }}>
+                <Text style={styles.permLabel}>Location</Text>
+                <Text style={styles.permSub}>Find nearby Disability Unit & learning support</Text>
+              </View>
+              <Text
+                style={[
+                  styles.permStatus,
+                  { color: locationGranted ? Colors.success : Colors.primary },
+                ]}
+              >
+                {locationGranted ? 'Enabled ✓' : 'Enable'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      </ScrollView>
     </View>
   );
 
@@ -326,10 +353,11 @@ const OnboardingScreen: React.FC<{ onComplete: () => void }> = ({ onComplete }) 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
   slide: {
-    flex: 1,
+    flexGrow: 1,
     alignItems: 'center',
     paddingHorizontal: Spacing.xl,
     paddingTop: 40,
+    paddingBottom: 32,
   },
   emojiCircle: {
     width: 120,

@@ -40,6 +40,11 @@ const TestRunnerScreen: React.FC<{ route: any; navigation: any }> = ({ route, na
   const item = items[index];
 
   useEffect(() => {
+    // Stop any speech still playing from the previous question before this
+    // one starts — otherwise a slower reader who answers quickly hears the
+    // old prompt bleed into the new question (or into Results, on the last
+    // item).
+    Speech.stop();
     itemStartedAt.current = Date.now();
     setSelected(null);
     if (item?.stimulus) {
@@ -56,6 +61,10 @@ const TestRunnerScreen: React.FC<{ route: any; navigation: any }> = ({ route, na
     }
   }, [index]);
 
+  // Stop speech immediately when leaving this screen at all (test finished,
+  // back button, etc.) — belt-and-braces alongside the per-question stop().
+  useEffect(() => () => { Speech.stop(); }, []);
+
   if (!item) return null;
 
   const choose = async (option: string) => {
@@ -69,9 +78,7 @@ const TestRunnerScreen: React.FC<{ route: any; navigation: any }> = ({ route, na
       responseTimeMs: Date.now() - itemStartedAt.current,
     });
     await Haptics.notificationAsync(
-      isCorrect
-        ? Haptics.NotificationFeedbackType.Success
-        : Haptics.NotificationFeedbackType.Warning
+      isCorrect ? Haptics.NotificationFeedbackType.Success : Haptics.NotificationFeedbackType.Warning
     );
 
     setTimeout(() => {
@@ -84,6 +91,7 @@ const TestRunnerScreen: React.FC<{ route: any; navigation: any }> = ({ route, na
   };
 
   const finishAttempt = async () => {
+    Speech.stop();
     const rawScore = responses.current.filter(r => r.isCorrect).length;
     const maxScore = items.length;
     const accuracy = maxScore > 0 ? rawScore / maxScore : 0;
@@ -95,10 +103,7 @@ const TestRunnerScreen: React.FC<{ route: any; navigation: any }> = ({ route, na
       testType,
       startedAt: attemptStartedAt.current,
       completedAt: new Date(),
-      rawScore,
-      maxScore,
-      accuracy,
-      riskBand,
+      rawScore, maxScore, accuracy, riskBand,
       durationSeconds,
     };
 
@@ -143,9 +148,7 @@ const TestRunnerScreen: React.FC<{ route: any; navigation: any }> = ({ route, na
           <Ionicons name="close" size={26} color={Colors.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{meta.title}</Text>
-        <Text style={styles.headerCount}>
-          {index + 1}/{items.length}
-        </Text>
+        <Text style={styles.headerCount}>{index + 1}/{items.length}</Text>
       </View>
       <View style={styles.progressWrap}>
         <ProgressBar progress={progress} color={Colors.primary} height={6} />
@@ -200,53 +203,28 @@ const TestRunnerScreen: React.FC<{ route: any; navigation: any }> = ({ route, na
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.sm,
-    paddingBottom: Spacing.md,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: Spacing.lg, paddingTop: Spacing.sm, paddingBottom: Spacing.md,
   },
   headerTitle: { fontSize: Fonts.sizes.md, fontWeight: '700', color: Colors.text },
   headerCount: { fontSize: Fonts.sizes.sm, color: Colors.textMuted, fontWeight: '600' },
   progressWrap: { paddingHorizontal: Spacing.lg, marginBottom: Spacing.xl },
   body: { flex: 1, paddingHorizontal: Spacing.lg, justifyContent: 'center' },
   stimulusWrap: {
-    backgroundColor: Colors.primaryLight,
-    borderRadius: Radii.xl,
-    paddingVertical: Spacing.xxxl,
-    paddingHorizontal: Spacing.lg,
-    alignItems: 'center',
+    backgroundColor: Colors.primaryLight, borderRadius: Radii.xl,
+    paddingVertical: Spacing.xxxl, paddingHorizontal: Spacing.lg, alignItems: 'center',
   },
-  stimulusLabel: {
-    fontSize: Fonts.sizes.md,
-    color: Colors.primary,
-    fontWeight: '600',
-    marginBottom: Spacing.md,
-  },
-  stimulusText: {
-    fontSize: 30,
-    fontWeight: '800',
-    color: Colors.primaryDark,
-    letterSpacing: 1,
-    textAlign: 'center',
-  },
+  stimulusLabel: { fontSize: Fonts.sizes.md, color: Colors.primary, fontWeight: '600', marginBottom: Spacing.md },
+  stimulusText: { fontSize: 30, fontWeight: '800', color: Colors.primaryDark, letterSpacing: 1, textAlign: 'center' },
   promptCard: {
-    backgroundColor: Colors.surface,
-    borderRadius: Radii.lg,
-    padding: Spacing.xl,
-    marginBottom: Spacing.xl,
-    ...Shadows.sm,
+    backgroundColor: Colors.surface, borderRadius: Radii.lg,
+    padding: Spacing.xl, marginBottom: Spacing.xl, ...Shadows.sm,
   },
   promptText: { fontSize: Fonts.sizes.lg, fontWeight: '600', color: Colors.text, lineHeight: 26 },
   optionsWrap: { gap: Spacing.md },
   optionBtn: {
-    backgroundColor: Colors.surface,
-    borderRadius: Radii.md,
-    borderWidth: 1.5,
-    borderColor: Colors.border,
-    paddingVertical: Spacing.lg,
-    paddingHorizontal: Spacing.lg,
+    backgroundColor: Colors.surface, borderRadius: Radii.md, borderWidth: 1.5,
+    borderColor: Colors.border, paddingVertical: Spacing.lg, paddingHorizontal: Spacing.lg,
   },
   optionCorrect: { backgroundColor: Colors.successLight, borderColor: Colors.success },
   optionWrong: { backgroundColor: Colors.dangerLight, borderColor: Colors.danger },
